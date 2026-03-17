@@ -1,0 +1,90 @@
+[
+  {
+    "name": "abpvn",
+    "url": "https://abpvn.com/android/abpvn.txt"
+  },
+  {
+    "name": "hostsvn",
+    "url": "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts"
+  },
+  {
+    "name": "adguard_dns",
+    "url": "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt"
+  },
+  {
+    "name": "stevenblack",
+    "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+  },
+  {
+    "name": "stevenblack_gambling",
+    "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling-only/hosts"
+  },
+  {
+    "name": "stevenblack_porn",
+    "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts"
+  },
+  {
+    "name": "stevenblack_social",
+    "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/social-only/hosts"
+  },
+  {
+    "name": "easylist",
+    "url": "https://easylist.to/easylist/easylist.txt"
+  },
+  {
+    "name": "easyprivacy",
+    "url": "https://easylist.to/easylist/easyprivacy.txt"
+  },
+  {
+    "name": "yoyo_adservers",
+    "url": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=1&mimetype=plaintext"
+  },
+  {
+    "name": "adguard_base",
+    "url": "https://filters.adtidy.org/extension/ublock/filters/2.txt"
+  },
+  {
+    "name": "adguard_mobile",
+    "url": "https://filters.adtidy.org/extension/ublock/filters/11.txt"
+  },
+  {
+    "name": "adguard_social",
+    "url": "https://filters.adtidy.org/extension/ublock/filters/4.txt"
+  },
+  {
+    "name": "hagezi_light",
+    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/light.txt"
+  },
+  {
+    "name": "hagezi_multi",
+    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/multi.txt"
+  },
+  {
+    "name": "hagezi_pro",
+    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/pro.txt"
+  },
+  {
+    "name": "hagezi_pro_plus",
+    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/pro.plus.txt"
+  },
+  {
+    "name": "hagezi_ultimate",
+    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/ultimate.txt"
+  },
+  {
+    "name": "hagezi_tif",
+    "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/tif.txt"
+  },
+  {
+    "name": "urlhaus_malware",
+    "url": "https://urlhaus.abuse.ch/downloads/hostfile/"
+  },
+  {
+    "name": "phishing_army",
+    "url": "https://phishing.army/download/phishing_army_blocklist.txt"
+  },
+  {
+    "name": "rpilist_malware",
+    "url": "https://raw.githubusercontent.com/RPiList/specials/master/Blocklisten/malware"
+  }
+]
