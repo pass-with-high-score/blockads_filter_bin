@@ -53,6 +53,7 @@ type ManifestEntry struct {
 	IsEnabled   bool   `json:"isEnabled"`
 	IsBuiltIn   bool   `json:"isBuiltIn"`
 	Category    string `json:"category"`
+	RuleCount   int    `json:"ruleCount"`
 	BloomURL    string `json:"bloomUrl,omitempty"`
 	TrieURL     string `json:"trieUrl,omitempty"`
 	CssURL      string `json:"cssUrl,omitempty"`
@@ -664,6 +665,8 @@ func processEntry(entry FilterEntry, outputDir string) (*ManifestEntry, error) {
 		log.Printf("[%s] ⚠ No domains or CSS rules found, skipping", entry.Name)
 		return nil, nil
 	}
+
+	manifest.RuleCount = len(domains)
 
 	// Step 2: Build Trie (only if we have domains)
 	var trieBuildDuration time.Duration
