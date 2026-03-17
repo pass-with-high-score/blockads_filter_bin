@@ -32,10 +32,31 @@ import (
 // Configuration
 // ────────────────────────────────────────────────────────────────────────────
 
+const GitHubRawBase = "https://raw.githubusercontent.com/pass-with-high-score/blockads_filter_bin/refs/heads/main/output"
+
 // FilterEntry represents a single filter list to download and process.
 type FilterEntry struct {
-	Name string `json:"name"` // Output file prefix (e.g. "oisd_big")
-	URL  string `json:"url"`  // URL to the raw filter text file
+	Name        string `json:"name"`
+	ID          string `json:"id"`
+	URL         string `json:"url"`
+	Description string `json:"description"`
+	IsEnabled   bool   `json:"isEnabled"`
+	IsBuiltIn   bool   `json:"isBuiltIn"`
+	Category    string `json:"category"`
+}
+
+// ManifestEntry represents the generated output information for a filter list.
+type ManifestEntry struct {
+	Name        string `json:"name"`
+	ID          string `json:"id"`
+	Description string `json:"description"`
+	IsEnabled   bool   `json:"isEnabled"`
+	IsBuiltIn   bool   `json:"isBuiltIn"`
+	Category    string `json:"category"`
+	BloomURL    string `json:"bloomUrl,omitempty"`
+	TrieURL     string `json:"trieUrl,omitempty"`
+	CssURL      string `json:"cssUrl,omitempty"`
+	OriginalURL string `json:"originalUrl"`
 }
 
 // loadConfigJSON reads a JSON config file containing an array of FilterEntry.
@@ -75,7 +96,7 @@ func loadPlainURLs(path string) ([]FilterEntry, error) {
 		if seen[name] > 1 {
 			name = fmt.Sprintf("%s_%d", name, seen[name])
 		}
-		entries = append(entries, FilterEntry{Name: name, URL: line})
+		entries = append(entries, FilterEntry{Name: name, ID: name, URL: line})
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("reading URL list %s: %w", path, err)
@@ -196,46 +217,110 @@ func parseDomainLine(line string) string {
 	return domain
 }
 
-// downloadAndParseDomains downloads a filter list from url and returns unique domains.
+// containsLetterOrDigit checks if a string contains at least one letter or digit.
+func containsLetterOrDigit(s string) bool {
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return true
+		}
+	}
+	return false
+}
+
+// downloadAndParseDomains returns unique domains and cosmetic CSS rules.
 // It streams the response line-by-line using bufio.Scanner for memory efficiency.
-func downloadAndParseDomains(url string) ([]string, error) {
+func downloadAndParseDomains(url string) ([]string, []string, error) {
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
 
 	resp, err := client.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP GET %s: %w", url, err)
+		return nil, nil, fmt.Errorf("HTTP GET %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+		return nil, nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
 	}
 
-	// Use a set to deduplicate domains
-	seen := make(map[string]struct{})
+	// Use sets to deduplicate
+	seenDomains := make(map[string]struct{})
+	seenCSS := make(map[string]struct{})
 	var domains []string
+	var cssRules []string
 
 	scanner := bufio.NewScanner(resp.Body)
 	// Increase buffer size for very long lines (some filter lists have them)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
+	const maxCSSRules = 2000
+	// Note: To match the Kotlin implementation, we just extract the matching selectors here
+	// and we will format them into minified CSS during the processEntry step.
 	for scanner.Scan() {
-		domain := parseDomainLine(scanner.Text())
+		rawLine := strings.TrimSpace(scanner.Text())
+
+		// Skip obvious comments
+		if (strings.HasPrefix(rawLine, "! ") || strings.HasPrefix(rawLine, "# ")) && !strings.Contains(rawLine, "##") {
+			continue
+		}
+
+		// 1. Extract CSS Rules
+		if strings.Contains(rawLine, "##") &&
+			!strings.Contains(rawLine, "#@#") &&
+			!strings.Contains(rawLine, "##+js") &&
+			!strings.Contains(rawLine, "##^") {
+
+			idx := strings.Index(rawLine, "##")
+			if idx >= 0 {
+				prefix := rawLine[:idx]
+				selector := strings.TrimSpace(rawLine[idx+2:])
+
+				// V1: Only generic rules (no domain prefix)
+				if prefix == "" && selector != "" {
+					// Validate selector
+					isValid := true
+					if strings.HasPrefix(selector, "+") || strings.HasPrefix(selector, "^") {
+						// Invalid start
+						isValid = false
+					} else if strings.Contains(selector, " ") {
+						// Exclude selectors with unescaped spaces
+						isValid = false
+					} else if !containsLetterOrDigit(selector) {
+						// Exclude comment separators that slipped through like `###############`
+						isValid = false
+					} else if strings.Contains(selector, "url(") || strings.Contains(selector, "expression(") {
+						// Avoid potentially dangerous content
+						isValid = false
+					}
+
+					if isValid {
+						if _, exists := seenCSS[selector]; !exists {
+							seenCSS[selector] = struct{}{}
+							if len(cssRules) < maxCSSRules {
+								cssRules = append(cssRules, selector)
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// 2. Extract Domains
+		domain := parseDomainLine(rawLine)
 		if domain == "" {
 			continue
 		}
-		if _, exists := seen[domain]; !exists {
-			seen[domain] = struct{}{}
+		if _, exists := seenDomains[domain]; !exists {
+			seenDomains[domain] = struct{}{}
 			domains = append(domains, domain)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scanning response from %s: %w", url, err)
+		return nil, nil, fmt.Errorf("scanning response from %s: %w", url, err)
 	}
 
-	return domains, nil
+	return domains, cssRules, nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -543,73 +628,132 @@ func (bf *BloomFilter) Serialize(path string) error {
 // Processing Pipeline
 // ────────────────────────────────────────────────────────────────────────────
 
-// processEntry downloads a filter list, parses domains, builds the Trie and
-// Bloom Filter, and serializes them to the output directory.
-func processEntry(entry FilterEntry, outputDir string) error {
+// processEntry downloads a filter list, parses domains and CSS rules,
+// builds the Trie and Bloom Filter, and serializes them to the output directory.
+func processEntry(entry FilterEntry, outputDir string) (*ManifestEntry, error) {
 	startTime := time.Now()
 	log.Printf("[%s] ▶ Starting download: %s", entry.Name, entry.URL)
 
-	// Step 1: Download and parse domains
-	domains, err := downloadAndParseDomains(entry.URL)
+	manifest := &ManifestEntry{
+		Name:        entry.Name,
+		ID:          entry.ID,
+		Description: entry.Description,
+		IsEnabled:   entry.IsEnabled,
+		IsBuiltIn:   entry.IsBuiltIn,
+		Category:    entry.Category,
+		OriginalURL: entry.URL,
+	}
+
+	// Use ID as the filename prefix, fallback to deriving from URL if missing
+	prefix := entry.ID
+	if prefix == "" {
+		prefix = deriveNameFromURL(entry.URL)
+		manifest.ID = prefix
+	}
+
+	// Step 1: Download and parse domains and CSS
+	domains, cssRules, err := downloadAndParseDomains(entry.URL)
 	if err != nil {
-		return fmt.Errorf("[%s] download failed: %w", entry.Name, err)
+		return nil, fmt.Errorf("[%s] download failed: %w", entry.Name, err)
 	}
 	downloadDuration := time.Since(startTime)
-	log.Printf("[%s] ✓ Downloaded and parsed %d unique domains (%.2fs)",
-		entry.Name, len(domains), downloadDuration.Seconds())
+	log.Printf("[%s] ✓ Downloaded and parsed %d domains, %d CSS rules (%.2fs)",
+		entry.Name, len(domains), len(cssRules), downloadDuration.Seconds())
 
-	if len(domains) == 0 {
-		log.Printf("[%s] ⚠ No domains found, skipping", entry.Name)
-		return nil
+	if len(domains) == 0 && len(cssRules) == 0 {
+		log.Printf("[%s] ⚠ No domains or CSS rules found, skipping", entry.Name)
+		return nil, nil
 	}
 
-	// Step 2: Build Trie
-	trieStart := time.Now()
-	root := NewTrieNode()
-	for _, domain := range domains {
-		root.Insert(domain)
+	// Step 2: Build Trie (only if we have domains)
+	var trieBuildDuration time.Duration
+	var root *TrieNode
+	if len(domains) > 0 {
+		trieStart := time.Now()
+		root = NewTrieNode()
+		for _, domain := range domains {
+			root.Insert(domain)
+		}
+		trieBuildDuration = time.Since(trieStart)
+		log.Printf("[%s] ✓ Trie built: %d nodes, %d terminals (%.2fs)",
+			entry.Name, root.countNodes(), root.countTerminals(), trieBuildDuration.Seconds())
 	}
-	trieBuildDuration := time.Since(trieStart)
-	log.Printf("[%s] ✓ Trie built: %d nodes, %d terminals (%.2fs)",
-		entry.Name, root.countNodes(), root.countTerminals(), trieBuildDuration.Seconds())
 
-	// Step 3: Build Bloom Filter
-	bloomStart := time.Now()
-	bf := NewBloomFilter(len(domains))
-	for _, domain := range domains {
-		bf.Add(domain)
+	// Step 3: Build Bloom Filter (only if we have domains)
+	var bloomBuildDuration time.Duration
+	var bf *BloomFilter
+	if len(domains) > 0 {
+		bloomStart := time.Now()
+		bf = NewBloomFilter(len(domains))
+		for _, domain := range domains {
+			bf.Add(domain)
+		}
+		bloomBuildDuration = time.Since(bloomStart)
+		log.Printf("[%s] ✓ Bloom Filter built: %d bits, %d hash functions, FPR=0.1%% (%.2fs)",
+			entry.Name, bf.bitCount, bf.hashCount, bloomBuildDuration.Seconds())
 	}
-	bloomBuildDuration := time.Since(bloomStart)
-	log.Printf("[%s] ✓ Bloom Filter built: %d bits, %d hash functions, FPR=0.1%% (%.2fs)",
-		entry.Name, bf.bitCount, bf.hashCount, bloomBuildDuration.Seconds())
+
+	serializeStart := time.Now()
 
 	// Step 4: Serialize Trie to .trie file
-	triePath := filepath.Join(outputDir, entry.Name+".trie")
-	serializeStart := time.Now()
-	if err := SerializeTrie(root, triePath); err != nil {
-		return fmt.Errorf("[%s] trie serialization failed: %w", entry.Name, err)
+	if len(domains) > 0 {
+		triePath := filepath.Join(outputDir, prefix+".trie")
+		if err := SerializeTrie(root, triePath); err != nil {
+			return nil, fmt.Errorf("[%s] trie serialization failed: %w", entry.Name, err)
+		}
+		trieFileInfo, _ := os.Stat(triePath)
+		manifest.TrieURL = fmt.Sprintf("%s/%s.trie", GitHubRawBase, prefix)
+		log.Printf("[%s] ✓ Saved %s (%s)", entry.Name, triePath, formatBytes(trieFileInfo.Size()))
 	}
-	trieFileInfo, _ := os.Stat(triePath)
-	log.Printf("[%s] ✓ Saved %s (%s)",
-		entry.Name, triePath, formatBytes(trieFileInfo.Size()))
 
 	// Step 5: Serialize Bloom Filter to .bloom file
-	bloomPath := filepath.Join(outputDir, entry.Name+".bloom")
-	if err := bf.Serialize(bloomPath); err != nil {
-		return fmt.Errorf("[%s] bloom serialization failed: %w", entry.Name, err)
+	if len(domains) > 0 {
+		bloomPath := filepath.Join(outputDir, prefix+".bloom")
+		if err := bf.Serialize(bloomPath); err != nil {
+			return nil, fmt.Errorf("[%s] bloom serialization failed: %w", entry.Name, err)
+		}
+		bloomFileInfo, _ := os.Stat(bloomPath)
+		manifest.BloomURL = fmt.Sprintf("%s/%s.bloom", GitHubRawBase, prefix)
+		log.Printf("[%s] ✓ Saved %s (%s)", entry.Name, bloomPath, formatBytes(bloomFileInfo.Size()))
 	}
-	bloomFileInfo, _ := os.Stat(bloomPath)
-	serializeDuration := time.Since(serializeStart)
-	log.Printf("[%s] ✓ Saved %s (%s)",
-		entry.Name, bloomPath, formatBytes(bloomFileInfo.Size()))
 
+	// Step 6: Save CSS rules to .css file
+	if len(cssRules) > 0 {
+		cssPath := filepath.Join(outputDir, prefix+".css")
+		cssFile, err := os.Create(cssPath)
+		if err != nil {
+			return nil, fmt.Errorf("[%s] creating css file failed: %w", entry.Name, err)
+		}
+
+		cssWriter := bufio.NewWriter(cssFile)
+
+		// Write each extracted selector on a new line
+		for _, rule := range cssRules {
+			if _, err := cssWriter.WriteString(rule + "\n"); err != nil {
+				cssFile.Close() // best effort close on error
+				return nil, fmt.Errorf("[%s] writing css rule failed: %w", entry.Name, err)
+			}
+		}
+
+		if err := cssWriter.Flush(); err != nil {
+			cssFile.Close()
+			return nil, fmt.Errorf("[%s] flushing css rules failed: %w", entry.Name, err)
+		}
+		cssFile.Close()
+
+		cssFileInfo, _ := os.Stat(cssPath)
+		manifest.CssURL = fmt.Sprintf("%s/%s.css", GitHubRawBase, prefix)
+		log.Printf("[%s] ✓ Saved %s (%s)", entry.Name, cssPath, formatBytes(cssFileInfo.Size()))
+	}
+
+	serializeDuration := time.Since(serializeStart)
 	totalDuration := time.Since(startTime)
 	log.Printf("[%s] ✅ Finished in %.2fs (download: %.2fs, trie: %.2fs, bloom: %.2fs, serialize: %.2fs)",
 		entry.Name, totalDuration.Seconds(),
 		downloadDuration.Seconds(), trieBuildDuration.Seconds(),
 		bloomBuildDuration.Seconds(), serializeDuration.Seconds())
 
-	return nil
+	return manifest, nil
 }
 
 // formatBytes returns a human-readable byte count string.
@@ -673,7 +817,12 @@ func main() {
 	overallStart := time.Now()
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, *maxConcurrent) // semaphore for concurrency limit
-	errCh := make(chan error, len(entries))    // collect errors
+
+	type resultData struct {
+		manifest *ManifestEntry
+		err      error
+	}
+	resultsCh := make(chan resultData, len(entries))
 
 	for _, entry := range entries {
 		wg.Add(1)
@@ -682,20 +831,43 @@ func main() {
 			sem <- struct{}{}        // acquire semaphore slot
 			defer func() { <-sem }() // release slot
 
-			if err := processEntry(e, *outputDir); err != nil {
+			manifest, err := processEntry(e, *outputDir)
+			if err != nil {
 				log.Printf("✗ ERROR: %v", err)
-				errCh <- err
 			}
+			resultsCh <- resultData{manifest: manifest, err: err}
 		}(entry)
 	}
 
 	wg.Wait()
-	close(errCh)
+	close(resultsCh)
 
-	// Report results
+	// Report results and gather manifests
 	var errors []error
-	for err := range errCh {
-		errors = append(errors, err)
+	var manifests []*ManifestEntry
+
+	for res := range resultsCh {
+		if res.err != nil {
+			errors = append(errors, res.err)
+		} else if res.manifest != nil {
+			manifests = append(manifests, res.manifest)
+		}
+	}
+
+	// Write manifest JSON
+	manifestPath := filepath.Join(*outputDir, "filter_lists.json")
+	manifestFile, err := os.Create(manifestPath)
+	if err == nil {
+		encoder := json.NewEncoder(manifestFile)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(manifests); err == nil {
+			log.Printf("✓ Generated manifest: %s", manifestPath)
+		} else {
+			log.Printf("✗ Failed to write manifest JSON: %v", err)
+		}
+		manifestFile.Close()
+	} else {
+		log.Printf("✗ Failed to create manifest file: %v", err)
 	}
 
 	totalDuration := time.Since(overallStart)
