@@ -103,19 +103,18 @@ cp .env.example .env
 | `R2_BUCKET_NAME` | R2 Bucket Name | `blockads-filters` |
 | `R2_PUBLIC_URL` | R2 Public Access URL | `https://pub-xyz.r2.dev` |
 
-### 3a. Run with Docker Compose (Recommended)
+### 3a. Run with Docker Compose
 
 ```bash
 docker compose up --build -d
 ```
 
-This starts both PostgreSQL and the API server. The database schema is auto-migrated on startup.
+This starts the API server using the external PostgreSQL database defined in your `.env` file (`DATABASE_URL`). The database schema is auto-migrated on startup.
 
 ### 3b. Run Locally (Development)
 
 ```bash
-# Start PostgreSQL (if not using Docker)
-# Then:
+# Ensure your external PostgreSQL database is accessible
 make run
 # or
 go run ./cmd/server
