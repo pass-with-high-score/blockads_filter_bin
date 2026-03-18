@@ -1,8 +1,12 @@
 // Package config loads application configuration from environment variables.
+// It supports .env files via github.com/joho/godotenv for local development.
 package config
 
 import (
+	"log"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds all application configuration values.
@@ -19,15 +23,20 @@ type Config struct {
 	R2AccessKeyID     string
 	R2SecretAccessKey string
 	R2BucketName      string
-	R2PublicURL       string // e.g. "https://pub-xyz.r2.dev"
+	R2PublicURL       string // e.g. "https://filter.pwhs.app"
 
 	// Compilation
 	MaxConcurrency int
 	TempDir        string
 }
 
-// Load reads configuration from environment variables with sensible defaults.
+// Load reads configuration from a .env file (if present) and environment variables.
 func Load() *Config {
+	// Load .env file if it exists (silently ignored in production)
+	if err := godotenv.Load(); err != nil {
+		log.Println("ℹ No .env file found, using system environment variables")
+	}
+
 	return &Config{
 		Port:        getEnv("PORT", "8080"),
 		Environment: getEnv("ENVIRONMENT", "development"),
