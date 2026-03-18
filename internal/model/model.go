@@ -24,9 +24,9 @@ type FilterList struct {
 // ────────────────────────────────────────────────────────────────────────────
 
 // BuildRequest is the JSON body for POST /api/build.
+// Name is auto-derived from the URL.
 type BuildRequest struct {
-	Name string `json:"name" binding:"required"`
-	URL  string `json:"url"  binding:"required,url"`
+	URL string `json:"url" binding:"required,url"`
 }
 
 // BuildResponse is the JSON response for a successful build.

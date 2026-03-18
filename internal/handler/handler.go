@@ -3,10 +3,13 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
-	"regexp"
+	"net/url"
 	"strings"
 	"time"
 	"unicode"
@@ -20,9 +23,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// validNameRegex allows only alphanumeric, hyphens, and underscores.
-var validNameRegex = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
-
 // BuildHandler processes filter list build requests.
 type BuildHandler struct {
 	db  *store.Postgres
@@ -35,11 +35,60 @@ func NewBuildHandler(db *store.Postgres, r2 *storage.R2Client, cfg *config.Confi
 	return &BuildHandler{db: db, r2: r2, cfg: cfg}
 }
 
+// TokenAuthMiddleware returns a Gin middleware that validates Authorization: Bearer <token>.
+func TokenAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if cfg.AdminToken == "" {
+			c.JSON(http.StatusForbidden, model.ErrorResponse{
+				Status:  "error",
+				Message: "Admin token is not configured on the server",
+			})
+			c.Abort()
+			return
+		}
+
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, model.ErrorResponse{
+				Status:  "error",
+				Message: "Authorization header is required",
+			})
+			c.Abort()
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == authHeader {
+			// No "Bearer " prefix found
+			c.JSON(http.StatusUnauthorized, model.ErrorResponse{
+				Status:  "error",
+				Message: "Authorization header must use Bearer scheme",
+			})
+			c.Abort()
+			return
+		}
+
+		// Constant-time comparison to prevent timing attacks
+		if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.AdminToken)) != 1 {
+			c.JSON(http.StatusUnauthorized, model.ErrorResponse{
+				Status:  "error",
+				Message: "Invalid admin token",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // Build handles POST /api/build
 //
 // Request Body:
 //
-//	{"name": "MyFilter", "url": "https://example.com/filter.txt"}
+//	{"url": "https://example.com/filter.txt"}
+//
+// Name is auto-derived from the URL.
 //
 // Response:
 //
@@ -55,13 +104,31 @@ func (h *BuildHandler) Build(c *gin.Context) {
 		return
 	}
 
-	// Sanitize name: trim whitespace, replace spaces with underscores
-	req.Name = sanitizeName(req.Name)
+	// ── Check if URL already exists in the database ──
+	// Skip re-compilation unless ?force=true is set
+	forceRebuild := strings.EqualFold(c.Query("force"), "true")
+	if !forceRebuild {
+		existing, err := h.db.GetFilterByURL(c.Request.Context(), req.URL)
+		if err == nil && existing != nil {
+			log.Printf("[API] URL already exists in DB: %s (id=%d), returning existing record", req.URL, existing.ID)
+			c.JSON(http.StatusOK, model.BuildResponse{
+				Status:      "success",
+				DownloadURL: existing.R2DownloadLink,
+				RuleCount:   existing.RuleCount,
+				FileSize:    existing.FileSize,
+			})
+			return
+		}
+	}
 
-	if !validNameRegex.MatchString(req.Name) {
+	// Derive name from the URL
+	name := deriveNameFromURL(req.URL)
+	name = sanitizeName(name)
+
+	if name == "" {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
-			Message: "Invalid name: must be 1-64 alphanumeric characters, hyphens, or underscores",
+			Message: "Could not derive a valid name from the provided URL",
 		})
 		return
 	}
@@ -77,8 +144,8 @@ func (h *BuildHandler) Build(c *gin.Context) {
 	}
 
 	// ── Compile the filter list ──
-	log.Printf("[API] Starting compilation for '%s'", req.Name)
-	result, err := compiler.CompileFilterList(req.Name, req.URL)
+	log.Printf("[API] Starting compilation for '%s' (derived from URL)", name)
+	result, err := compiler.CompileFilterList(name, req.URL)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Status:  "error",
@@ -88,11 +155,11 @@ func (h *BuildHandler) Build(c *gin.Context) {
 	}
 
 	// ── Upload to Cloudflare R2 ──
-	log.Printf("[API] Uploading %s.zip to R2 (%s)", req.Name, formatBytes(result.FileSize))
+	log.Printf("[API] Uploading %s.zip to R2 (%s)", name, formatBytes(result.FileSize))
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Second)
 	defer cancel()
 
-	downloadURL, err := h.r2.UploadZip(ctx, req.Name, result.ZipData)
+	downloadURL, err := h.r2.UploadZip(ctx, name, result.ZipData)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Status:  "error",
@@ -102,9 +169,9 @@ func (h *BuildHandler) Build(c *gin.Context) {
 	}
 	log.Printf("[API] ✓ Uploaded to R2: %s", downloadURL)
 
-	// ── Save/update record in PostgreSQL ──
+	// ── Save/update record in PostgreSQL (keyed by URL) ──
 	filter := &model.FilterList{
-		Name:           req.Name,
+		Name:           name,
 		URL:            req.URL,
 		R2DownloadLink: downloadURL,
 		RuleCount:      result.RuleCount,
@@ -114,7 +181,7 @@ func (h *BuildHandler) Build(c *gin.Context) {
 		log.Printf("[API] ⚠ DB upsert failed (upload succeeded): %v", err)
 		// Still return success since the upload worked
 	}
-	log.Printf("[API] ✓ DB record upserted: %s (id=%d)", req.Name, filter.ID)
+	log.Printf("[API] ✓ DB record upserted: url=%s (id=%d)", req.URL, filter.ID)
 
 	// ── Return success response ──
 	c.JSON(http.StatusOK, model.BuildResponse{
@@ -146,13 +213,16 @@ func (h *BuildHandler) ListFilters(c *gin.Context) {
 	})
 }
 
-// DeleteFilter handles DELETE /api/filters/:name — deletes a filter by name.
+// DeleteFilter handles DELETE /api/filters — deletes a filter by URL.
+// Requires Authorization: Bearer <token> header (enforced by middleware).
+//
+// Query parameter: ?url=https://example.com/filter.txt
 func (h *BuildHandler) DeleteFilter(c *gin.Context) {
-	name := c.Param("name")
-	if name == "" {
+	filterURL := c.Query("url")
+	if filterURL == "" {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
-			Message: "Filter name is required",
+			Message: "Query parameter 'url' is required",
 		})
 		return
 	}
@@ -160,14 +230,9 @@ func (h *BuildHandler) DeleteFilter(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	// Delete from R2
-	if err := h.r2.DeleteObject(ctx, name); err != nil {
-		log.Printf("[API] ⚠ R2 delete warning for '%s': %v", name, err)
-		// Continue to delete from DB even if R2 fails (might already be deleted)
-	}
-
-	// Delete from DB
-	if err := h.db.DeleteFilterByName(ctx, name); err != nil {
+	// Look up the filter by URL to get the name for R2 deletion
+	filter, err := h.db.GetFilterByURL(ctx, filterURL)
+	if err != nil {
 		c.JSON(http.StatusNotFound, model.ErrorResponse{
 			Status:  "error",
 			Message: err.Error(),
@@ -175,15 +240,134 @@ func (h *BuildHandler) DeleteFilter(c *gin.Context) {
 		return
 	}
 
+	// Delete from R2
+	if err := h.r2.DeleteObject(ctx, filter.Name); err != nil {
+		log.Printf("[API] ⚠ R2 delete warning for '%s': %v", filter.Name, err)
+		// Continue to delete from DB even if R2 fails
+	}
+
+	// Delete from DB
+	if err := h.db.DeleteFilterByURL(ctx, filterURL); err != nil {
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to delete filter: " + err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
-		"message": "Filter '" + name + "' deleted",
+		"message": "Filter deleted",
 	})
 }
 
 // ────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ────────────────────────────────────────────────────────────────────────────
+
+// skipSegments are common path segments that don't add meaning to the name.
+var skipSegments = map[string]bool{
+	"raw":    true,
+	"master": true,
+	"main":   true,
+	"latest": true,
+	"refs":   true,
+	"heads":  true,
+	"gh":     true,
+	"download":  true,
+	"downloads": true,
+	"extension": true,
+}
+
+// deriveNameFromURL extracts a descriptive, unique name from a URL by combining
+// meaningful path segments and appending a short hash of the full URL.
+//
+// Examples:
+//
+//	https://raw.githubusercontent.com/RPiList/specials/master/Blocklisten/malware
+//	  → rpilist_blocklisten_malware_a1b2c3d4
+//
+//	https://filters.adtidy.org/extension/ublock/filters/2.txt
+//	  → adtidy_ublock_filters_2_f9e8d7c6
+//
+//	https://easylist.to/easylist/easylist.txt
+//	  → easylist_easylist_b5c4a3e2
+func deriveNameFromURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Host == "" {
+		return "filter"
+	}
+
+	// ── 1. Extract meaningful parts from the host ──
+	host := strings.ToLower(parsed.Host)
+	// Remove common prefixes and suffixes
+	host = strings.TrimPrefix(host, "www.")
+	host = strings.TrimPrefix(host, "raw.")
+	host = strings.TrimPrefix(host, "cdn.")
+	// Strip known hosting domains to keep just the owner/org
+	for _, suffix := range []string{
+		".githubusercontent.com",
+		".github.io",
+		".jsdelivr.net",
+		".gitlab.io",
+	} {
+		if strings.HasSuffix(host, suffix) {
+			host = strings.TrimSuffix(host, suffix)
+			break
+		}
+	}
+	// Remove TLD-like suffixes (.com, .org, .to, etc.) for cleaner names
+	if idx := strings.LastIndex(host, "."); idx > 0 {
+		host = host[:idx]
+	}
+
+	// ── 2. Extract meaningful parts from the path ──
+	path := strings.Trim(parsed.Path, "/")
+	segments := strings.Split(path, "/")
+
+	var meaningful []string
+	for _, seg := range segments {
+		seg = strings.ToLower(seg)
+		// Remove file extensions
+		for _, ext := range []string{".txt", ".csv", ".hosts", ".list", ".php"} {
+			seg = strings.TrimSuffix(seg, ext)
+		}
+		if seg == "" || skipSegments[seg] {
+			continue
+		}
+		meaningful = append(meaningful, seg)
+	}
+
+	// ── 3. Build the name: host + meaningful path segments ──
+	var parts []string
+
+	// Add host part if it's informative
+	hostClean := strings.NewReplacer(".", "_", "-", "_").Replace(host)
+	if hostClean != "" {
+		parts = append(parts, hostClean)
+	}
+
+	// Add meaningful path segments (limit to avoid absurdly long names)
+	maxSegments := 3
+	if len(meaningful) > maxSegments {
+		meaningful = meaningful[len(meaningful)-maxSegments:]
+	}
+	parts = append(parts, meaningful...)
+
+	// ── 4. Append short hash of the full URL for guaranteed uniqueness ──
+	hash := sha256.Sum256([]byte(rawURL))
+	shortHash := hex.EncodeToString(hash[:4]) // 8 hex chars
+
+	if len(parts) == 0 {
+		return "filter_" + shortHash
+	}
+
+	// Replace any remaining unsafe chars
+	replacer := strings.NewReplacer(".", "_", "-", "_", " ", "_", "@", "")
+	name := replacer.Replace(strings.Join(parts, "_"))
+
+	return name + "_" + shortHash
+}
 
 // sanitizeName cleans up a filter name for use as a filename.
 func sanitizeName(name string) string {
@@ -198,7 +382,6 @@ func sanitizeName(name string) string {
 		case r == ' ':
 			b.WriteRune('_')
 		}
-		// Skip all other characters
 	}
 	return b.String()
 }
