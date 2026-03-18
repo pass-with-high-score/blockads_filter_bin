@@ -11,4 +11,4 @@ bin/
 # IDE
 .idea/
 *.iml
-#server
+server
