@@ -10,9 +10,12 @@ RUN apk add --no-cache git ca-certificates
 WORKDIR /app
 
 COPY go.mod go.sum ./
-RUN go mod download
+# Ignore errors if go.sum is incomplete
+RUN go mod download || true
 
 COPY . .
+# Run go mod tidy to ensure go.mod and go.sum are in sync
+RUN go mod tidy
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /server ./cmd/server
 
 # ── Stage 2: Runtime ──
