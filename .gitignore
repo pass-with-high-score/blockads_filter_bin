@@ -1,6 +1,5 @@
 # Binaries
 blockads-filtering
-server
 bin/
 
 # Environment
@@ -12,3 +11,4 @@ bin/
 # IDE
 .idea/
 *.iml
+#server
