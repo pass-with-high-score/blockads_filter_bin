@@ -69,7 +69,7 @@ func main() {
 	{
 		api.POST("/build", h.Build)
 		api.GET("/filters", h.ListFilters)
-		api.DELETE("/filters/:name", h.DeleteFilter)
+		api.DELETE("/filters", handler.TokenAuthMiddleware(cfg), h.DeleteFilter)
 	}
 
 	// ── 5. Start daily cron scheduler ──

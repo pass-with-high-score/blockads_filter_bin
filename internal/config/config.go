@@ -25,6 +25,9 @@ type Config struct {
 	R2BucketName      string
 	R2PublicURL       string // e.g. "https://filter.pwhs.app"
 
+	// Authentication
+	AdminToken string // required for destructive operations (DELETE)
+
 	// Compilation
 	MaxConcurrency int
 	TempDir        string
@@ -48,6 +51,8 @@ func Load() *Config {
 		R2SecretAccessKey: getEnv("R2_SECRET_ACCESS_KEY", ""),
 		R2BucketName:      getEnv("R2_BUCKET_NAME", "blockads-filters"),
 		R2PublicURL:       getEnv("R2_PUBLIC_URL", ""),
+
+		AdminToken: getEnv("ADMIN_TOKEN", ""),
 
 		MaxConcurrency: 4,
 		TempDir:        getEnv("TEMP_DIR", os.TempDir()),

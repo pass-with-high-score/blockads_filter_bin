@@ -59,12 +59,13 @@ func (db *Postgres) Close() {
 	db.pool.Close()
 }
 
-// migrate creates the filter_lists table if it does not exist.
+// migrate creates the filter_lists table and ensures the schema is up-to-date.
+// Handles upgrades from the old schema (UNIQUE on name → UNIQUE on url).
 func (db *Postgres) migrate(ctx context.Context) error {
 	query := `
 		CREATE TABLE IF NOT EXISTS filter_lists (
 			id              BIGSERIAL PRIMARY KEY,
-			name            TEXT        NOT NULL UNIQUE,
+			name            TEXT        NOT NULL,
 			url             TEXT        NOT NULL,
 			r2_download_link TEXT       NOT NULL DEFAULT '',
 			rule_count      INTEGER     NOT NULL DEFAULT 0,
@@ -73,20 +74,40 @@ func (db *Postgres) migrate(ctx context.Context) error {
 			created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 
-		CREATE INDEX IF NOT EXISTS idx_filter_lists_name ON filter_lists (name);
+		-- Drop old unique constraint on name if it exists (schema v1 → v2 migration)
+		DO $$ BEGIN
+			IF EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conname = 'filter_lists_name_key'
+			) THEN
+				ALTER TABLE filter_lists DROP CONSTRAINT filter_lists_name_key;
+			END IF;
+		END $$;
+
+		-- Ensure unique constraint on url exists
+		DO $$ BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conname = 'filter_lists_url_key'
+			) THEN
+				ALTER TABLE filter_lists ADD CONSTRAINT filter_lists_url_key UNIQUE (url);
+			END IF;
+		END $$;
+
+		CREATE INDEX IF NOT EXISTS idx_filter_lists_url ON filter_lists (url);
 	`
 	_, err := db.pool.Exec(ctx, query)
 	return err
 }
 
-// UpsertFilter inserts a new filter list record or updates an existing one (by name).
-// Uses ON CONFLICT (name) DO UPDATE to perform an upsert.
+// UpsertFilter inserts a new filter list record or updates an existing one (by URL).
+// Uses ON CONFLICT (url) DO UPDATE to perform an upsert.
 func (db *Postgres) UpsertFilter(ctx context.Context, f *model.FilterList) error {
 	query := `
 		INSERT INTO filter_lists (name, url, r2_download_link, rule_count, file_size, last_updated)
 		VALUES ($1, $2, $3, $4, $5, NOW())
-		ON CONFLICT (name) DO UPDATE
-		SET url              = EXCLUDED.url,
+		ON CONFLICT (url) DO UPDATE
+		SET name             = EXCLUDED.name,
 		    r2_download_link = EXCLUDED.r2_download_link,
 		    rule_count       = EXCLUDED.rule_count,
 		    file_size        = EXCLUDED.file_size,
@@ -128,14 +149,32 @@ func (db *Postgres) GetAllFilters(ctx context.Context) ([]model.FilterList, erro
 	return filters, rows.Err()
 }
 
-// DeleteFilterByName removes a filter list record by its name.
-func (db *Postgres) DeleteFilterByName(ctx context.Context, name string) error {
-	tag, err := db.pool.Exec(ctx, `DELETE FROM filter_lists WHERE name = $1`, name)
+// GetFilterByURL retrieves a single filter list record by its URL.
+func (db *Postgres) GetFilterByURL(ctx context.Context, url string) (*model.FilterList, error) {
+	query := `
+		SELECT id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
+		FROM filter_lists
+		WHERE url = $1
+	`
+	var f model.FilterList
+	err := db.pool.QueryRow(ctx, query, url).Scan(
+		&f.ID, &f.Name, &f.URL, &f.R2DownloadLink,
+		&f.RuleCount, &f.FileSize, &f.LastUpdated, &f.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("filter with URL '%s' not found", url)
+	}
+	return &f, nil
+}
+
+// DeleteFilterByURL removes a filter list record by its URL.
+func (db *Postgres) DeleteFilterByURL(ctx context.Context, url string) error {
+	tag, err := db.pool.Exec(ctx, `DELETE FROM filter_lists WHERE url = $1`, url)
 	if err != nil {
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("filter '%s' not found", name)
+		return fmt.Errorf("filter with URL '%s' not found", url)
 	}
 	return nil
 }
