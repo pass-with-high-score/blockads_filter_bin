@@ -135,7 +135,7 @@ func (h *BuildHandler) Build(c *gin.Context) {
 
 	// ── Validate URL is reachable ──
 	log.Printf("[API] Validating URL: %s", req.URL)
-	if err := compiler.ValidateURL(req.URL); err != nil {
+	if err := compiler.ValidateFilterListURL(req.URL); err != nil {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
 			Message: "URL validation failed: " + err.Error(),

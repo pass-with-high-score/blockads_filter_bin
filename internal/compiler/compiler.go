@@ -587,28 +587,186 @@ func createZipArchive(name string, trieData, bloomData, cssData, infoData []byte
 // URL Validation
 // ────────────────────────────────────────────────────────────────────────────
 
-// ValidateURL performs a HEAD request to verify the URL is reachable.
-func ValidateURL(rawURL string) error {
+// ValidateFilterListURL performs a 3-stage validation to ensure a URL actually
+// points to a valid ad-blocking filter list, not an HTML page or random file.
+//
+// Stage 1: Format check (http/https scheme).
+// Stage 2: Content-Type check via HEAD request (reject HTML, JSON, media types).
+// Stage 3: Content sniffing — downloads the first 5 KB and scans for ad-block syntax.
+func ValidateFilterListURL(rawURL string) error {
+	// ── Stage 1: Format Check ──
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		return fmt.Errorf("URL must use http:// or https:// scheme")
 	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
+
+	// ── Stage 2: Content-Type Check (HEAD request) ──
 	resp, err := client.Head(rawURL)
-	if err != nil {
-		// Fall back to GET if HEAD is not supported
-		resp, err = client.Get(rawURL)
-		if err != nil {
-			return fmt.Errorf("URL is not reachable: %w", err)
+	if err == nil {
+		resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("URL returned HTTP %d", resp.StatusCode)
 		}
-		resp.Body.Close()
-	} else {
-		resp.Body.Close()
+
+		ct := strings.ToLower(resp.Header.Get("Content-Type"))
+		if ct != "" {
+			// Extract the media type (ignore charset and other params)
+			if idx := strings.Index(ct, ";"); idx != -1 {
+				ct = strings.TrimSpace(ct[:idx])
+			}
+
+			// Reject types that are clearly not filter lists
+			rejectedTypes := []string{
+				"text/html",
+				"application/json",
+				"application/xml",
+				"text/xml",
+			}
+			rejectedPrefixes := []string{
+				"image/",
+				"video/",
+				"audio/",
+				"application/zip",
+				"application/pdf",
+			}
+
+			for _, rt := range rejectedTypes {
+				if ct == rt {
+					return fmt.Errorf("Content-Type is %s; expected a plain text filter list", ct)
+				}
+			}
+			for _, rp := range rejectedPrefixes {
+				if strings.HasPrefix(ct, rp) {
+					return fmt.Errorf("Content-Type is %s; expected a plain text filter list", ct)
+				}
+			}
+		}
 	}
+	// If HEAD fails (some servers don't support it), continue to Stage 3
+
+	// ── Stage 3: Content Sniffing (partial GET, first 5 KB) ──
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	// Request only the first 5 KB; servers may ignore this, which is fine
+	req.Header.Set("Range", "bytes=0-5119")
+
+	resp, err = client.Do(req)
+	if err != nil {
+		return fmt.Errorf("URL is not reachable: %w", err)
+	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("URL returned HTTP %d", resp.StatusCode)
 	}
+
+	// Read at most 5 KB
+	const maxBytes = 5120
+	buf := make([]byte, maxBytes)
+	n, _ := io.ReadFull(resp.Body, buf)
+	if n == 0 {
+		return fmt.Errorf("URL returned empty response body")
+	}
+	chunk := string(buf[:n])
+
+	// Quick HTML detection — reject if the body starts with HTML
+	trimmed := strings.TrimSpace(chunk)
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "<!doctype") || strings.HasPrefix(lower, "<html") || strings.HasPrefix(lower, "<head") {
+		return fmt.Errorf("URL contains HTML, not a filter list")
+	}
+
+	// Scan lines for ad-blocking heuristics
+	matched := false
+	plainDomainCount := 0         // count lines that look like plain domains
+	const plainDomainThreshold = 3 // need at least 3 plain domain lines to confirm
+	scanner := bufio.NewScanner(strings.NewReader(chunk))
+	lineCount := 0
+	const maxLines = 100
+
+	for scanner.Scan() && lineCount < maxLines {
+		line := strings.TrimSpace(scanner.Text())
+		lineCount++
+
+		if line == "" {
+			continue
+		}
+
+		// Heuristic checks — any single match is sufficient
+		switch {
+		// AdBlock Plus header
+		case strings.HasPrefix(line, "[Adblock Plus"):
+			matched = true
+		case strings.HasPrefix(line, "[Adblock"):
+			matched = true
+
+		// ABP metadata (! prefix)
+		case strings.HasPrefix(line, "! Title:"):
+			matched = true
+		case strings.HasPrefix(line, "! Homepage:"):
+			matched = true
+		case strings.HasPrefix(line, "! Last modified:"):
+			matched = true
+
+		// Hosts/domain-list metadata (# prefix, Hagezi style)
+		case strings.HasPrefix(line, "# Title:"):
+			matched = true
+		case strings.HasPrefix(line, "# Description:"):
+			matched = true
+		case strings.HasPrefix(line, "# Homepage:"):
+			matched = true
+		case strings.HasPrefix(line, "# Expires:"):
+			matched = true
+		case strings.HasPrefix(line, "# Syntax:"):
+			matched = true
+		case strings.HasPrefix(line, "# Version:"):
+			matched = true
+		case strings.HasPrefix(line, "# License:"):
+			matched = true
+		case strings.HasPrefix(line, "# Number of entries:"):
+			matched = true
+
+		// Hosts file format
+		case strings.HasPrefix(line, "0.0.0.0 ") || strings.HasPrefix(line, "0.0.0.0\t"):
+			matched = true
+		case strings.HasPrefix(line, "127.0.0.1 ") || strings.HasPrefix(line, "127.0.0.1\t"):
+			matched = true
+
+		// Network rules (AdBlock Plus syntax)
+		case strings.HasPrefix(line, "||"):
+			matched = true
+		case strings.HasPrefix(line, "@@||"):
+			matched = true
+
+		// CSS cosmetic filter rules (e.g. "example.com##.ad-banner" or "##.ad-class")
+		case strings.Contains(line, "##") && !strings.HasPrefix(line, "#"):
+			matched = true
+
+		default:
+			// Plain domain detection (Hagezi domain-list format):
+			// Non-comment lines that contain a dot and no spaces → likely a domain
+			if !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "!") &&
+				strings.Contains(line, ".") && !strings.ContainsAny(line, " \t") {
+				plainDomainCount++
+				if plainDomainCount >= plainDomainThreshold {
+					matched = true
+				}
+			}
+		}
+
+		if matched {
+			break
+		}
+	}
+
+	if !matched {
+		return fmt.Errorf("URL does not contain recognizable ad-blocking filter list syntax")
+	}
+
 	return nil
 }
 
