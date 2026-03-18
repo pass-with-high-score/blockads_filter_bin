@@ -14,7 +14,7 @@ Available in two modes:
 ## Architecture
 
 ```
-POST /api/build { name, url }
+POST /api/build { url }
         │
         ▼
    ┌──────────────────────────────────────────────┐
@@ -94,6 +94,8 @@ cp .env.example .env
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `PORT` | Server port | `8080` |
+| `ENVIRONMENT` | Run environment | `development` |
+| `ADMIN_TOKEN` | Auth token for destructive actions | `your_secret_admin_token` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgres://user:pass@localhost:5432/blockads?sslmode=disable` |
 | `R2_ACCOUNT_ID` | Cloudflare Account ID | `abc123def456` |
 | `R2_ACCESS_KEY_ID` | R2 API Token Key ID | `your_access_key` |
@@ -125,13 +127,16 @@ go run ./cmd/server
 
 ### `POST /api/build` — Compile a filter list
 
+(Optional: Append `?force=true` to force a recompile if the URL already exists in the database.)
+
 **Request:**
 ```json
 {
-  "name": "MyFilter",
   "url": "https://example.com/filter.txt"
 }
 ```
+
+*Note: The filter `name` is automatically derived securely and uniquely from the provided URL (e.g., `example_filter_a1b2c3d4`).*
 
 **Response (200 OK):**
 ```json
@@ -173,9 +178,17 @@ go run ./cmd/server
 }
 ```
 
-### `DELETE /api/filters/:name` — Delete a filter
+### `DELETE /api/filters` — Delete a filter
 
-Removes the zip from R2 and the record from PostgreSQL.
+**Requires Header:** `Authorization: Bearer <ADMIN_TOKEN>`
+
+Removes the zip from R2 and the record from PostgreSQL. Requires the `url` as a query parameter.
+
+**Example Request:**
+```bash
+curl -X DELETE "http://localhost:8080/api/filters?url=https://example.com/filter.txt" \
+  -H "Authorization: Bearer your_secret_admin_token"
+```
 
 ### `GET /health` — Health check
 
@@ -243,14 +256,16 @@ Auto-migrated on server startup:
 ```sql
 CREATE TABLE filter_lists (
     id               BIGSERIAL    PRIMARY KEY,
-    name             TEXT         NOT NULL UNIQUE,
-    url              TEXT         NOT NULL,
+    name             TEXT         NOT NULL,
+    url              TEXT         NOT NULL UNIQUE,
     r2_download_link TEXT         NOT NULL DEFAULT '',
     rule_count       INTEGER      NOT NULL DEFAULT 0,
     file_size        BIGINT       NOT NULL DEFAULT 0,
     last_updated     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_filter_lists_url ON filter_lists (url);
 ```
 
 ---
@@ -259,7 +274,7 @@ CREATE TABLE filter_lists (
 
 - **Memory Efficiency**: All filter list downloads are processed line-by-line via `bufio.Scanner`. The raw text is never loaded entirely into memory, preventing OOM on lists with millions of rules.
 - **In-Memory Zip**: The `.trie`, `.bloom`, `.css`, and `info.json` are built as byte slices and zipped in-memory — no temp files on disk.
-- **Upsert Semantics**: `POST /api/build` with the same `name` will recompile and overwrite the existing zip in R2 and update the DB record.
+- **Smart Caching & Upserts**: `POST /api/build` ensures we don't duplicate work. Existing URLs are immediately returned from DB unless overridden with `?force=true`. The database uses the `url` as the unique identity for conflict resolution during upserts.
 - **Bounded Concurrency**: Both the cron job and CLI use a semaphore pattern (`chan struct{}`) to cap goroutines and prevent CPU/network spikes.
 - **Binary Compatibility**: The `.trie` and `.bloom` formats are byte-identical to those produced by the Kotlin `DomainTrie`/`BloomFilterBuilder` on Android, ensuring cross-platform interoperability.
 
