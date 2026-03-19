@@ -651,14 +651,24 @@ func ValidateFilterListURL(rawURL string) error {
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
-	// Request only the first 5 KB; servers may ignore this, which is fine
-	req.Header.Set("Range", "bytes=0-5119")
 
+	// Try with Range header first; request only the first 5 KB
+	req.Header.Set("Range", "bytes=0-5119")
 	resp, err = client.Do(req)
 	if err != nil {
 		return fmt.Errorf("URL is not reachable: %w", err)
 	}
-	defer resp.Body.Close()
+
+	// If server rejects Range request, fallback to a normal GET
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable || resp.StatusCode == http.StatusNotImplemented {
+		resp.Body.Close()
+		req.Header.Del("Range")
+		resp, err = client.Do(req)
+		if err != nil {
+			return fmt.Errorf("URL is not reachable on fallback: %w", err)
+		}
+	}
+	defer resp.Body.Close() // Keep defer after fallback is handled
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("URL returned HTTP %d", resp.StatusCode)
