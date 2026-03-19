@@ -11,12 +11,16 @@ WORKDIR /app
 
 COPY go.mod go.sum ./
 # Ignore errors if go.sum is incomplete
-RUN go mod download || true
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download || true
 
 COPY . .
 # Run go mod tidy to ensure go.mod and go.sum are in sync
-RUN go mod tidy
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /server ./cmd/server
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod tidy
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /server ./cmd/server
 
 # ── Stage 2: Runtime ──
 FROM alpine:3.20
