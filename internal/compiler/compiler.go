@@ -652,8 +652,8 @@ func ValidateFilterListURL(rawURL string) error {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 
-	// Try with Range header first; request only the first 5 KB
-	req.Header.Set("Range", "bytes=0-5119")
+	// Try with Range header first; request only the first 16 KB
+	req.Header.Set("Range", "bytes=0-16383")
 	resp, err = client.Do(req)
 	if err != nil {
 		return fmt.Errorf("URL is not reachable: %w", err)
@@ -674,8 +674,8 @@ func ValidateFilterListURL(rawURL string) error {
 		return fmt.Errorf("URL returned HTTP %d", resp.StatusCode)
 	}
 
-	// Read at most 5 KB
-	const maxBytes = 5120
+	// Read at most 16 KB
+	const maxBytes = 16384
 	buf := make([]byte, maxBytes)
 	n, _ := io.ReadFull(resp.Body, buf)
 	if n == 0 {
@@ -696,7 +696,7 @@ func ValidateFilterListURL(rawURL string) error {
 	const plainDomainThreshold = 3 // need at least 3 plain domain lines to confirm
 	scanner := bufio.NewScanner(strings.NewReader(chunk))
 	lineCount := 0
-	const maxLines = 100
+	const maxLines = 300
 
 	for scanner.Scan() && lineCount < maxLines {
 		line := strings.TrimSpace(scanner.Text())
@@ -737,7 +737,11 @@ func ValidateFilterListURL(rawURL string) error {
 			matched = true
 		case strings.HasPrefix(line, "# License:"):
 			matched = true
-		case strings.HasPrefix(line, "# Number of entries:"):
+		case strings.HasPrefix(line, "# Number of entries:") || strings.HasPrefix(line, "#Number of Entries:"):
+			matched = true
+		case strings.HasPrefix(line, "# Last Updated:") || strings.HasPrefix(line, "#Last Updated:"):
+			matched = true
+		case strings.HasPrefix(line, "Created using"):
 			matched = true
 
 		// Hosts file format
