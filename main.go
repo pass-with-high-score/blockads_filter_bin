@@ -33,7 +33,7 @@ import (
 // Configuration
 // ────────────────────────────────────────────────────────────────────────────
 
-const GitHubRawBase = "https://raw.githubusercontent.com/pass-with-high-score/blockads-default-filter/refs/heads/mainoutput"
+const GitHubRawBase = "https://raw.githubusercontent.com/pass-with-high-score/blockads-default-filter/refs/heads/main/output"
 
 // FilterEntry represents a single filter list to download and process.
 type FilterEntry struct {
