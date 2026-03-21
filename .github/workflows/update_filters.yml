@@ -1,0 +1,53 @@
+name: Update Filter Lists
+
+on:
+  schedule:
+    # Run every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allow manual triggering from the GitHub UI
+
+permissions:
+  contents: write # Needed to commit and push the updated files
+
+jobs:
+  update-filters:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Required to trigger other actions on push (optional but good practice)
+          # token: ${{ secrets.PAT }}
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22' # Version compatible with the codebase
+          cache: true
+
+      - name: Build and Run Compiler
+        run: |
+          echo "Building compiler..."
+          CGO_ENABLED=0 go build -o blockads-filtering .
+          
+          echo "Running compiler (this may take a minute or two)..."
+          ./blockads-filtering -config config.json -output output/ -concurrency 4
+
+      - name: Commit and Push Changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Add the output directory
+          git add output/
+          
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes in filter lists detected."
+          else
+            echo "Changes detected, committing updates..."
+            git commit -m "Auto-update filter lists (Trie & Bloom) [skip ci]"
+            git push
+          fi
