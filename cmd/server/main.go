@@ -79,6 +79,7 @@ func main() {
 	api := router.Group("/api")
 	{
 		api.POST("/build", h.Build)
+		api.POST("/filters/rebuild-all", handler.TokenAuthMiddleware(cfg), h.RebuildAll)
 		api.GET("/filters", h.ListFilters)
 		api.DELETE("/filters", handler.TokenAuthMiddleware(cfg), h.DeleteFilter)
 	}

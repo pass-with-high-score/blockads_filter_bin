@@ -192,6 +192,70 @@ func (h *BuildHandler) Build(c *gin.Context) {
 	})
 }
 
+// RebuildAll handles POST /api/filters/rebuild-all — triggers asynchronous rebuilds of all stored filters.
+func (h *BuildHandler) RebuildAll(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	filters, err := h.db.GetAllFilters(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to fetch filters: " + err.Error(),
+		})
+		return
+	}
+
+	// Because rebuilding can take a long time, we run it asynchronously and return immediately.
+	go func() {
+		bgCtx := context.Background() // Don't use gin context which cancels when request ends
+		for _, filter := range filters {
+			log.Printf("[API RebuildAll] Rebuilding '%s' (%s)", filter.Name, filter.URL)
+			
+			// Validate
+			if err := compiler.ValidateFilterListURL(filter.URL); err != nil {
+				log.Printf("[API RebuildAll] URL validation failed for %s: %v", filter.URL, err)
+				continue
+			}
+
+			// Compile
+			result, err := compiler.CompileFilterList(filter.Name, filter.URL)
+			if err != nil {
+				log.Printf("[API RebuildAll] Compilation failed for %s: %v", filter.URL, err)
+				continue
+			}
+
+			// Upload
+			uploadCtx, uploadCancel := context.WithTimeout(bgCtx, 2*time.Minute)
+			downloadURL, err := h.r2.UploadZip(uploadCtx, filter.Name, result.ZipData)
+			uploadCancel()
+			if err != nil {
+				log.Printf("[API RebuildAll] R2 upload failed for %s: %v", filter.URL, err)
+				continue
+			}
+
+			// Update DB
+			updateFilter := filter
+			updateFilter.R2DownloadLink = downloadURL
+			updateFilter.RuleCount = result.RuleCount
+			updateFilter.FileSize = result.FileSize
+			
+			dbCtx, dbCancel := context.WithTimeout(bgCtx, 30*time.Second)
+			if err := h.db.UpsertFilter(dbCtx, &updateFilter); err != nil {
+				log.Printf("[API RebuildAll] DB upsert failed for %s: %v", filter.URL, err)
+			}
+			dbCancel()
+			log.Printf("[API RebuildAll] ✓ Successfully rebuilt '%s'", filter.Name)
+		}
+		log.Printf("[API RebuildAll] ✓ All filters have been rebuilt")
+	}()
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": fmt.Sprintf("Started rebuilding %d filters in the background", len(filters)),
+	})
+}
+
 // ListFilters handles GET /api/filters — returns all saved filter lists.
 func (h *BuildHandler) ListFilters(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)

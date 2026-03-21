@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -393,16 +394,16 @@ func (t *TrieNode) countTerminals() int {
 // Binary format matches bloom_trie_build_doc.md exactly:
 //
 // HEADER (16 bytes, big-endian):
-//   magic(4)=0x54524945  version(4)=1  nodeCount(4)  domainCount(4)
+//   magic(4)=0x54524945  version(4)=2  nodeCount(4)  domainCount(4)
 //
 // Each NODE in BFS order:
-//   isTerminal(1 byte)  childCount(2 bytes, big-endian)
+//   isTerminal(1 byte)  childCount(4 bytes, big-endian)
 //   For each child:
 //     labelLen(2 bytes, big-endian)  label(N bytes UTF-8)  childOffset(4 bytes, big-endian)
 
 const (
 	trieMagic   = 0x54524945 // "TRIE"
-	trieVersion = 1
+	trieVersion = 2
 )
 
 // SerializeTrie writes the Trie to a binary file in the format compatible
@@ -426,14 +427,19 @@ func SerializeTrie(root *TrieNode, path string) error {
 		node := queue[i]
 		node.bfsOffset = offset
 
-		// isTerminal(1) + childCount(2)
-		offset += 3
+		// isTerminal(1) + childCount(4)
+		offset += 5
 
-		// For each child: labelLen(2) + label(N) + childOffset(4)
-		for label, child := range node.Children {
-			offset += 2 + utf8Len(label) + 4
+		var labels []string
+		for label := range node.Children {
+			labels = append(labels, label)
+		}
+		sort.Strings(labels)
+
+		for _, label := range labels {
+			child := node.Children[label]
+			offset += 2 + len(label) + 4
 			queue = append(queue, child)
-			_ = child // enqueue
 		}
 	}
 
@@ -469,15 +475,22 @@ func SerializeTrie(root *TrieNode, path string) error {
 			}
 		}
 
-		// childCount (2 bytes, big-endian)
+		// childCount (4 bytes, big-endian)
 		var buf [4]byte
-		binary.BigEndian.PutUint16(buf[0:2], uint16(len(node.Children)))
-		if _, err := w.Write(buf[0:2]); err != nil {
+		binary.BigEndian.PutUint32(buf[0:4], uint32(len(node.Children)))
+		if _, err := w.Write(buf[0:4]); err != nil {
 			return err
 		}
 
+		var labels []string
+		for label := range node.Children {
+			labels = append(labels, label)
+		}
+		sort.Strings(labels)
+
 		// For each child: labelLen(2) + label(N bytes) + childOffset(4)
-		for label, child := range node.Children {
+		for _, label := range labels {
+			child := node.Children[label]
 			labelBytes := []byte(label)
 
 			// labelLen (2 bytes)
