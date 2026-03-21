@@ -8,8 +8,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -256,12 +258,31 @@ func (h *BuildHandler) RebuildAll(c *gin.Context) {
 	})
 }
 
-// ListFilters handles GET /api/filters — returns all saved filter lists.
+// ListFilters handles GET /api/filters — returns filter lists with pagination and search.
+// Query parameters:
+//   - page (int): defaults to 1
+//   - limit (int): defaults to 10
+//   - search (string): optional search snippet
 func (h *BuildHandler) ListFilters(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	filters, err := h.db.GetAllFilters(ctx)
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "10"))
+	if err != nil || limit < 1 {
+		limit = 10
+	}
+	if limit > 100 { // Max limit 100 per page to save resources
+		limit = 100
+	}
+
+	search := c.Query("search")
+
+	filters, totalRecords, err := h.db.GetFiltersPaginated(ctx, page, limit, search)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Status:  "error",
@@ -270,10 +291,16 @@ func (h *BuildHandler) ListFilters(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"filters": filters,
-		"count":   len(filters),
+	totalPages := int(math.Ceil(float64(totalRecords) / float64(limit)))
+
+	c.JSON(http.StatusOK, model.PaginatedResponse{
+		Data: filters,
+		Meta: model.PaginationMeta{
+			CurrentPage:  page,
+			Limit:        limit,
+			TotalRecords: totalRecords,
+			TotalPages:   totalPages,
+		},
 	})
 }
 

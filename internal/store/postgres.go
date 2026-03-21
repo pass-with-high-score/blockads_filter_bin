@@ -149,6 +149,77 @@ func (db *Postgres) GetAllFilters(ctx context.Context) ([]model.FilterList, erro
 	return filters, rows.Err()
 }
 
+// GetFiltersPaginated returns filter list records with pagination and optional search filter.
+func (db *Postgres) GetFiltersPaginated(ctx context.Context, page, limit int, search string) ([]model.FilterList, int64, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
+
+	var totalRecords int64
+	var countQuery string
+	var countArgs []interface{}
+
+	if search != "" {
+		countQuery = "SELECT COUNT(*) FROM filter_lists WHERE name ILIKE $1 OR url ILIKE $1"
+		countArgs = append(countArgs, "%"+search+"%")
+	} else {
+		countQuery = "SELECT COUNT(*) FROM filter_lists"
+	}
+
+	err := db.pool.QueryRow(ctx, countQuery, countArgs...).Scan(&totalRecords)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var dataQuery string
+	var dataArgs []interface{}
+
+	if search != "" {
+		dataQuery = `
+			SELECT id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
+			FROM filter_lists
+			WHERE name ILIKE $1 OR url ILIKE $1
+			ORDER BY last_updated DESC
+			LIMIT $2 OFFSET $3
+		`
+		dataArgs = append(dataArgs, "%"+search+"%", limit, offset)
+	} else {
+		dataQuery = `
+			SELECT id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
+			FROM filter_lists
+			ORDER BY last_updated DESC
+			LIMIT $1 OFFSET $2
+		`
+		dataArgs = append(dataArgs, limit, offset)
+	}
+
+	rows, err := db.pool.Query(ctx, dataQuery, dataArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var filters []model.FilterList
+	for rows.Next() {
+		var f model.FilterList
+		if err := rows.Scan(&f.ID, &f.Name, &f.URL, &f.R2DownloadLink,
+			&f.RuleCount, &f.FileSize, &f.LastUpdated, &f.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		filters = append(filters, f)
+	}
+	
+	if filters == nil {
+		filters = []model.FilterList{}
+	}
+
+	return filters, totalRecords, rows.Err()
+}
+
 // GetFilterByURL retrieves a single filter list record by its URL.
 func (db *Postgres) GetFilterByURL(ctx context.Context, url string) (*model.FilterList, error) {
 	query := `
