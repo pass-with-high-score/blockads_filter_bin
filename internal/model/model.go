@@ -50,3 +50,21 @@ type InfoJSON struct {
 	RuleCount int       `json:"ruleCount"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Pagination Payloads
+// ────────────────────────────────────────────────────────────────────────────
+
+// PaginationMeta contains metadata for a paginated API response.
+type PaginationMeta struct {
+	CurrentPage  int   `json:"current_page"`
+	Limit        int   `json:"limit"`
+	TotalRecords int64 `json:"total_records"`
+	TotalPages   int   `json:"total_pages"`
+}
+
+// PaginatedResponse is a generic paginated response structure.
+type PaginatedResponse struct {
+	Data interface{}    `json:"data"`
+	Meta PaginationMeta `json:"meta"`
+}
