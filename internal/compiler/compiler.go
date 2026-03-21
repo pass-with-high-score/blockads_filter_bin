@@ -16,6 +16,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,7 +29,7 @@ import (
 
 const (
 	trieMagic    = 0x54524945 // "TRIE"
-	trieVersion  = 1
+	trieVersion  = 2
 	bloomMagic   = 0x424C4F4D // "BLOM"
 	bloomVersion = 1
 	bloomFPR     = 0.001 // False positive rate: 0.1%
@@ -388,10 +389,17 @@ func serializeTrieToBytes(root *TrieNode) ([]byte, error) {
 		node := queue[i]
 		node.bfsOffset = offset
 
-		// isTerminal(1) + childCount(2)
-		offset += 3
+		// isTerminal(1) + childCount(4)
+		offset += 5
 
-		for label, child := range node.Children {
+		var labels []string
+		for label := range node.Children {
+			labels = append(labels, label)
+		}
+		sort.Strings(labels)
+
+		for _, label := range labels {
+			child := node.Children[label]
 			offset += 2 + len(label) + 4
 			queue = append(queue, child)
 		}
@@ -418,12 +426,20 @@ func serializeTrieToBytes(root *TrieNode) ([]byte, error) {
 			buf.WriteByte(0)
 		}
 
-		// childCount (2 bytes)
-		binary.BigEndian.PutUint16(tmp[0:2], uint16(len(node.Children)))
-		buf.Write(tmp[0:2])
+		// childCount (4 bytes)
+		childCount := len(node.Children)
+		binary.BigEndian.PutUint32(tmp[0:4], uint32(childCount))
+		buf.Write(tmp[0:4])
 
-		// Children: labelLen(2) + label(N) + childOffset(4)
-		for label, child := range node.Children {
+		// Sort labels
+		var labels []string
+		for label := range node.Children {
+			labels = append(labels, label)
+		}
+		sort.Strings(labels)
+
+		for _, label := range labels {
+			child := node.Children[label]
 			labelBytes := []byte(label)
 
 			binary.BigEndian.PutUint16(tmp[0:2], uint16(len(labelBytes)))
@@ -451,34 +467,72 @@ type BloomFilter struct {
 	hashCount uint32
 }
 
+// OptimalBloomParams tính toán bitCount và hashCount tối ưu
+// fpRate: tỉ lệ False Positive mong muốn (vd: 0.001 = 0.1%)
+func OptimalBloomParams(expectedItems int, fpRate float64) (bitCount uint64, hashCount uint32) {
+	if expectedItems <= 0 {
+		expectedItems = 1
+	}
+	if fpRate <= 0 || fpRate >= 1 {
+		fpRate = 0.001
+	}
+	n := float64(expectedItems)
+	m := -n * math.Log(fpRate) / (math.Ln2 * math.Ln2)
+	k := (m / n) * math.Ln2
+
+	bitCount = uint64(math.Ceil(m))
+	hashCount = uint32(math.Max(math.Ceil(k), 1))
+
+	// Làm tròn bitCount lên thành byte
+	if bitCount%8 != 0 {
+		bitCount = (bitCount/8 + 1) * 8
+	}
+	return
+}
+
 // NewBloomFilter creates a new Bloom Filter optimized for n elements with FPR 0.1%.
-func NewBloomFilter(n int) *BloomFilter {
-	if n <= 0 {
-		n = 1
-	}
-
-	ln2 := math.Ln2
-	m := uint64(math.Ceil(-float64(n) * math.Log(bloomFPR) / (ln2 * ln2)))
-	m = ((m + 7) / 8) * 8 // round up to nearest multiple of 8
-
-	k := uint32(math.Round(float64(m) / float64(n) * ln2))
-	if k < 1 {
-		k = 1
-	}
-
+func NewBloomFilter(expectedItems int) *BloomFilter {
+	bitCount, hashCount := OptimalBloomParams(expectedItems, bloomFPR)
+	byteCount := bitCount / 8
 	return &BloomFilter{
-		bits:      make([]byte, m/8),
-		bitCount:  m,
-		hashCount: k,
+		bits:      make([]byte, byteCount),
+		bitCount:  bitCount,
+		hashCount: hashCount,
 	}
 }
 
+// bloomDoubleHash sinh ra 2 hash độc lập: FNV-1a và FNV-1
+func bloomDoubleHash(s string) (uint64, uint64) {
+	h1 := fnv.New64a()
+	h1.Write([]byte(s))
+	v1 := h1.Sum64()
+
+	h2 := fnv.New64()
+	h2.Write([]byte(s))
+	v2 := h2.Sum64()
+
+	if v2%2 == 0 {
+		v2++
+	}
+
+	return v1, v2
+}
+
+func (b *BloomFilter) hash(domain string, i uint32) uint64 {
+	h1, h2 := bloomDoubleHash(domain)
+	return h1 + uint64(i)*h2
+}
+
 // Add inserts a domain into the Bloom Filter.
-func (bf *BloomFilter) Add(domain string) {
-	h1, h2 := fnvDoubleHash(domain)
-	for i := uint32(0); i < bf.hashCount; i++ {
-		idx := (h1 + uint64(i)*h2) % bf.bitCount
-		bf.bits[idx/8] |= 1 << (idx % 8)
+func (b *BloomFilter) Add(domain string) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	domain = strings.TrimPrefix(domain, "*.")
+	if domain == "" {
+		return
+	}
+	for i := uint32(0); i < b.hashCount; i++ {
+		idx := b.hash(domain, i) % b.bitCount
+		b.bits[idx/8] |= 1 << (idx % 8)
 	}
 }
 
@@ -692,7 +746,7 @@ func ValidateFilterListURL(rawURL string) error {
 
 	// Scan lines for ad-blocking heuristics
 	matched := false
-	plainDomainCount := 0         // count lines that look like plain domains
+	plainDomainCount := 0          // count lines that look like plain domains
 	const plainDomainThreshold = 3 // need at least 3 plain domain lines to confirm
 	scanner := bufio.NewScanner(strings.NewReader(chunk))
 	lineCount := 0
