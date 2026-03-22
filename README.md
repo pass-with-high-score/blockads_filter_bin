@@ -2,12 +2,11 @@
 
 A high-performance Golang backend that downloads raw ad-blocking filter lists, compiles them into optimized binary formats (`.trie`, `.bloom`, `.css`), packages everything into a `.zip`, uploads to **Cloudflare R2**, and tracks metadata in **PostgreSQL**.
 
-Available in two modes:
+Available mode:
 
-| Mode | Entry Point | Use Case |
-|------|-------------|----------|
-| **API Server** | `cmd/server/main.go` | Production backend with REST API, R2 upload, DB, and daily cron |
-| **CLI Tool** | `main.go` | Local batch processing to `output/` directory (GitHub Actions, CI) |
+| Mode           | Entry Point          | Use Case                                                           |
+|----------------|----------------------|--------------------------------------------------------------------|
+| **API Server** | `cmd/server/main.go` | Production backend with REST API, R2 upload, DB, and daily cron    |
 
 ---
 
@@ -56,8 +55,6 @@ blockads_filter_bin/
 │   ├── model/model.go          # DB models + API request/response payloads
 │   ├── storage/r2.go           # Cloudflare R2 client (aws-sdk-go-v2, S3-compat)
 │   └── store/postgres.go       # PostgreSQL queries + auto-migration (pgx)
-├── main.go                     # Original CLI tool (standalone, no DB/R2)
-├── config.json                 # CLI filter list configuration
 ├── Dockerfile                  # Multi-stage production build (~15MB)
 ├── docker-compose.yml          # PostgreSQL + API server
 ├── Makefile                    # Common dev commands
@@ -201,39 +198,18 @@ curl -X DELETE "http://localhost:8080/api/filters?url=https://example.com/filter
 
 Each compiled `.zip` contains:
 
-| File | Description |
-|------|-------------|
-| `[name].trie` | Binary Trie tree (magic `0x54524945`, big-endian, BFS-ordered) |
+| File           | Description                                                              |
+|----------------|--------------------------------------------------------------------------|
+| `[name].trie`  | Binary Trie tree (magic `0x54524945`, big-endian, BFS-ordered)           |
 | `[name].bloom` | Bloom Filter (magic `0x424C4F4D`, FNV-1a/FNV-1 double-hashing, FPR 0.1%) |
-| `[name].css` | Cosmetic filter rules (e.g. `.banner { display: none !important; }`) |
-| `info.json` | Metadata: `{ name, url, ruleCount, updatedAt }` |
+| `[name].css`   | Cosmetic filter rules (e.g. `.banner { display: none !important; }`)     |
+| `info.json`    | Metadata: `{ name, url, ruleCount, updatedAt }`                          |
 
 Both `.trie` and `.bloom` files are designed for **zero-copy mmap** consumption by the BlockAds Android/iOS Go engine.
 
 ---
 
-## CLI Tool (Standalone)
 
-The original CLI mode generates files to a local `output/` directory without requiring PostgreSQL or R2:
-
-```bash
-# Using JSON config (default: config.json)
-go run main.go
-
-# Using plain text URL list
-go run main.go -urls filter.txt -output builds/ -concurrency 8
-```
-
-### CLI Flags
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-config` | `config.json` | Path to JSON config file |
-| `-urls` | — | Plain text file with one URL per line (overrides `-config`) |
-| `-output` | `output` | Output directory for compiled files |
-| `-concurrency` | `4` | Max concurrent downloads |
-
----
 
 ## Makefile Commands
 
@@ -241,7 +217,6 @@ go run main.go -urls filter.txt -output builds/ -concurrency 8
 make deps       # Download Go module dependencies
 make build      # Build the API server binary → bin/server
 make run        # Run the API server locally
-make cli        # Run the original CLI tool
 make test       # Run all tests
 make clean      # Remove build artifacts
 ```
@@ -274,7 +249,7 @@ CREATE INDEX idx_filter_lists_url ON filter_lists (url);
 - **Memory Efficiency**: All filter list downloads are processed line-by-line via `bufio.Scanner`. The raw text is never loaded entirely into memory, preventing OOM on lists with millions of rules.
 - **In-Memory Zip**: The `.trie`, `.bloom`, `.css`, and `info.json` are built as byte slices and zipped in-memory — no temp files on disk.
 - **Smart Caching & Upserts**: `POST /api/build` ensures we don't duplicate work. Existing URLs are immediately returned from DB unless overridden with `?force=true`. The database uses the `url` as the unique identity for conflict resolution during upserts.
-- **Bounded Concurrency**: Both the cron job and CLI use a semaphore pattern (`chan struct{}`) to cap goroutines and prevent CPU/network spikes.
+- **Bounded Concurrency**: The cron job uses a semaphore pattern (`chan struct{}`) to cap goroutines and prevent CPU/network spikes.
 - **Binary Compatibility**: The `.trie` and `.bloom` formats are byte-identical to those produced by the Kotlin `DomainTrie`/`BloomFilterBuilder` on Android, ensuring cross-platform interoperability.
 
 ---
