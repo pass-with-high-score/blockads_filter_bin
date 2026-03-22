@@ -281,8 +281,10 @@ func (h *BuildHandler) ListFilters(c *gin.Context) {
 	}
 
 	search := c.Query("search")
+	sort := c.Query("sort")
+	order := c.Query("order")
 
-	filters, totalRecords, err := h.db.GetFiltersPaginated(ctx, page, limit, search)
+	filters, totalRecords, err := h.db.GetFiltersPaginated(ctx, page, limit, search, sort, order)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Status:  "error",

@@ -149,8 +149,8 @@ func (db *Postgres) GetAllFilters(ctx context.Context) ([]model.FilterList, erro
 	return filters, rows.Err()
 }
 
-// GetFiltersPaginated returns filter list records with pagination and optional search filter.
-func (db *Postgres) GetFiltersPaginated(ctx context.Context, page, limit int, search string) ([]model.FilterList, int64, error) {
+// GetFiltersPaginated returns filter list records with pagination, optional search filter, and sorting.
+func (db *Postgres) GetFiltersPaginated(ctx context.Context, page, limit int, search, sort, order string) ([]model.FilterList, int64, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -175,25 +175,50 @@ func (db *Postgres) GetFiltersPaginated(ctx context.Context, page, limit int, se
 		return nil, 0, err
 	}
 
+	// Safely determine SQL ORDER BY column
+	orderColumn := "last_updated"
+	switch sort {
+	case "time":
+		orderColumn = "last_updated"
+	case "size":
+		orderColumn = "file_size"
+	case "rule":
+		orderColumn = "rule_count"
+	case "name":
+		orderColumn = "name"
+	}
+
+	// Safely determine SQL ORDER direction
+	orderDirection := "DESC"
+	if sort == "name" && order == "" {
+		orderDirection = "ASC" // Default name sort to ASC
+	}
+	if order == "asc" || order == "ASC" {
+		orderDirection = "ASC"
+	}
+	if order == "desc" || order == "DESC" {
+		orderDirection = "DESC"
+	}
+
 	var dataQuery string
 	var dataArgs []interface{}
 
 	if search != "" {
-		dataQuery = `
+		dataQuery = fmt.Sprintf(`
 			SELECT id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
 			FROM filter_lists
 			WHERE name ILIKE $1 OR url ILIKE $1
-			ORDER BY last_updated DESC
+			ORDER BY %s %s
 			LIMIT $2 OFFSET $3
-		`
+		`, orderColumn, orderDirection)
 		dataArgs = append(dataArgs, "%"+search+"%", limit, offset)
 	} else {
-		dataQuery = `
+		dataQuery = fmt.Sprintf(`
 			SELECT id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
 			FROM filter_lists
-			ORDER BY last_updated DESC
+			ORDER BY %s %s
 			LIMIT $1 OFFSET $2
-		`
+		`, orderColumn, orderDirection)
 		dataArgs = append(dataArgs, limit, offset)
 	}
 
