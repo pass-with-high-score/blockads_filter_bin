@@ -4,10 +4,10 @@
 
 BlockAds sử dụng **hai cấu trúc dữ liệu nhị phân** được lưu trên disk để tra cứu domain cực nhanh ở tầng Go:
 
-| File | Mục đích |
-|------|----------|
-| `ad_domains.trie` / `security_domains.trie` | Lưu toàn bộ domain bị chặn dưới dạng cây Trie compact (binary, big-endian) |
-| `ad_domains.bloom` / `security_domains.bloom` | Pre-filter xác suất: loại bỏ ~90% domain sạch trước khi tra Trie |
+| File                                          | Mục đích                                                                   |
+|-----------------------------------------------|----------------------------------------------------------------------------|
+| `ad_domains.trie` / `security_domains.trie`   | Lưu toàn bộ domain bị chặn dưới dạng cây Trie compact (binary, big-endian) |
+| `ad_domains.bloom` / `security_domains.bloom` | Pre-filter xác suất: loại bỏ ~90% domain sạch trước khi tra Trie           |
 
 Cả hai file được **memory-mapped (mmap)** ở runtime → zero heap allocation, không cần load vào RAM.
 

@@ -1,7 +1,7 @@
 # BlockAds Filter Compiler API — Makefile
 # ════════════════════════════════════════════════════════════
 
-.PHONY: help build run test clean deps docker-compose-up cli
+.PHONY: help build run test clean deps docker-compose-up
 
 help: ## Show help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -16,8 +16,6 @@ build: deps ## Build the API server binary
 run: deps ## Run the API server locally
 	go run ./cmd/server
 
-cli: deps ## Run the original CLI tool
-	go run main.go
 
 test: ## Run all tests
 	go test -v ./...
