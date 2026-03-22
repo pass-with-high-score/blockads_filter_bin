@@ -250,6 +250,15 @@ func parseDomainLine(line string) string {
 	switch {
 	case strings.HasPrefix(line, "||"):
 		domain = strings.TrimPrefix(line, "||")
+
+		// CRITICAL FIX: If the rule contains wildcards (*, ?) or paths (/), 
+		// it's a URL-level rule. A DNS-level blocker (BlockTrie) cannot handle this 
+		// and will over-block the entire domain if we just strip the suffix.
+		// Ex: ||service.hotstar.com^*/preroll? MUST NOT block service.hotstar.com.
+		if strings.ContainsAny(domain, "/*?") {
+			return ""
+		}
+
 		if idx := strings.IndexByte(domain, '^'); idx != -1 {
 			domain = domain[:idx]
 		}
