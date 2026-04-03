@@ -33,7 +33,6 @@ const (
 	bloomMagic   = 0x424C4F4D // "BLOM"
 	bloomVersion = 1
 	bloomFPR     = 0.001 // False positive rate: 0.1%
-	maxCSSRules  = 2000
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -174,39 +173,15 @@ func downloadAndParseDomains(url string) ([]string, []string, error) {
 			continue
 		}
 
-		// 1. Extract CSS Rules
+		// 1. Extract Cosmetic Rules (pass raw lines through to engine)
 		if strings.Contains(rawLine, "##") &&
 			!strings.Contains(rawLine, "#@#") &&
 			!strings.Contains(rawLine, "##+js") &&
 			!strings.Contains(rawLine, "##^") {
 
-			idx := strings.Index(rawLine, "##")
-			if idx >= 0 {
-				prefix := rawLine[:idx]
-				selector := strings.TrimSpace(rawLine[idx+2:])
-
-				// Only generic rules (no domain prefix)
-				if prefix == "" && selector != "" {
-					isValid := true
-					if strings.HasPrefix(selector, "+") || strings.HasPrefix(selector, "^") {
-						isValid = false
-					} else if strings.Contains(selector, " ") {
-						isValid = false
-					} else if !containsLetterOrDigit(selector) {
-						isValid = false
-					} else if strings.Contains(selector, "url(") || strings.Contains(selector, "expression(") {
-						isValid = false
-					}
-
-					if isValid {
-						if _, exists := seenCSS[selector]; !exists {
-							seenCSS[selector] = struct{}{}
-							if len(cssRules) < maxCSSRules {
-								cssRules = append(cssRules, selector)
-							}
-						}
-					}
-				}
+			if _, exists := seenCSS[rawLine]; !exists {
+				seenCSS[rawLine] = struct{}{}
+				cssRules = append(cssRules, rawLine)
 			}
 		}
 
@@ -307,16 +282,6 @@ func parseDomainLine(line string) string {
 	}
 
 	return domain
-}
-
-// containsLetterOrDigit checks if a string contains at least one letter or digit.
-func containsLetterOrDigit(s string) bool {
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			return true
-		}
-	}
-	return false
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -591,17 +556,16 @@ func fnvDoubleHash(s string) (uint64, uint64) {
 // CSS Builder
 // ────────────────────────────────────────────────────────────────────────────
 
-// buildCSSFile formats extracted selectors into a valid CSS file.
-// Each selector becomes: selector { display: none !important; }
-func buildCSSFile(selectors []string) []byte {
+// buildCSSFile writes cosmetic rules as raw lines for the Android engine to parse.
+// Format follows the BlockAds Cosmetic Rules spec: each line is a raw rule in
+// AdGuard/EasyList syntax (e.g. "##.ad-banner", "example.com##.sidebar-ad",
+// "~pwhs.com##.ads-banner"). The engine handles all display:none injection.
+func buildCSSFile(rules []string) []byte {
 	var buf bytes.Buffer
-	buf.WriteString("/* BlockAds Cosmetic Filter Rules */\n")
-	buf.WriteString("/* Auto-generated — DO NOT EDIT */\n\n")
-
-	for _, sel := range selectors {
-		fmt.Fprintf(&buf, "%s { display: none !important; }\n", sel)
+	for _, rule := range rules {
+		buf.WriteString(rule)
+		buf.WriteByte('\n')
 	}
-
 	return buf.Bytes()
 }
 
