@@ -169,6 +169,10 @@ func (h *BuildHandler) Build(c *gin.Context) {
 		})
 		return
 	}
+
+	// Cache-buster query to prevent CDN from serving old versions
+	downloadURL = fmt.Sprintf("%s?v=%d", downloadURL, time.Now().Unix())
+
 	log.Printf("[API] ✓ Uploaded to R2: %s", downloadURL)
 
 	// ── Save/update record in PostgreSQL (keyed by URL) ──
@@ -235,6 +239,9 @@ func (h *BuildHandler) RebuildAll(c *gin.Context) {
 				log.Printf("[API RebuildAll] R2 upload failed for %s: %v", filter.URL, err)
 				continue
 			}
+
+			// Cache-buster query to prevent CDN from serving old versions
+			downloadURL = fmt.Sprintf("%s?v=%d", downloadURL, time.Now().Unix())
 
 			// Update DB
 			updateFilter := filter
