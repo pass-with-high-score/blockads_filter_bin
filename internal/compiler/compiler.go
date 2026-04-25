@@ -57,16 +57,16 @@ func CompileFilterList(name, url string) (*CompileResult, error) {
 	startTime := time.Now()
 	log.Printf("[%s] ▶ Starting compilation: %s", name, url)
 
-	// ── Step 1: Download and parse domains + CSS rules (streaming) ──
-	domains, cssRules, err := downloadAndParseDomains(url)
+	// ── Step 1: Download and parse domains + CSS + scriptlet rules (streaming) ──
+	domains, cssRules, scriptlets, err := downloadAndParseDomains(url)
 	if err != nil {
 		return nil, fmt.Errorf("download/parse failed: %w", err)
 	}
-	log.Printf("[%s] ✓ Parsed %d domains, %d CSS rules (%.2fs)",
-		name, len(domains), len(cssRules), time.Since(startTime).Seconds())
+	log.Printf("[%s] ✓ Parsed %d domains, %d CSS rules, %d scriptlets (%.2fs)",
+		name, len(domains), len(cssRules), len(scriptlets), time.Since(startTime).Seconds())
 
-	if len(domains) == 0 && len(cssRules) == 0 {
-		return nil, fmt.Errorf("no domains or CSS rules found in filter list")
+	if len(domains) == 0 && len(cssRules) == 0 && len(scriptlets) == 0 {
+		return nil, fmt.Errorf("no domains, CSS rules, or scriptlets found in filter list")
 	}
 
 	// ── Step 2: Build Trie ──
@@ -107,6 +107,14 @@ func CompileFilterList(name, url string) (*CompileResult, error) {
 			name, len(cssRules), formatBytes(int64(len(cssBytes))))
 	}
 
+	// ── Step 4b: Build scriptlets (raw EasyList ##+js(...) lines) ──
+	var scriptletBytes []byte
+	if len(scriptlets) > 0 {
+		scriptletBytes = buildScriptletsFile(scriptlets)
+		log.Printf("[%s] ✓ Scriptlets built: %d rules (%s)",
+			name, len(scriptlets), formatBytes(int64(len(scriptletBytes))))
+	}
+
 	// ── Step 5: Build info.json ──
 	info := model.InfoJSON{
 		Name:      name,
@@ -120,7 +128,7 @@ func CompileFilterList(name, url string) (*CompileResult, error) {
 	}
 
 	// ── Step 6: Package into ZIP ──
-	zipData, err := createZipArchive(name, trieBytes, bloomBytes, cssBytes, infoBytes)
+	zipData, err := createZipArchive(name, trieBytes, bloomBytes, cssBytes, scriptletBytes, infoBytes)
 	if err != nil {
 		return nil, fmt.Errorf("zip creation failed: %w", err)
 	}
@@ -140,25 +148,27 @@ func CompileFilterList(name, url string) (*CompileResult, error) {
 // Domain Parser (streaming, line-by-line)
 // ────────────────────────────────────────────────────────────────────────────
 
-// downloadAndParseDomains streams a filter list and extracts unique domains
-// and cosmetic CSS rules. Uses bufio.Scanner for memory efficiency.
-func downloadAndParseDomains(url string) ([]string, []string, error) {
+// downloadAndParseDomains streams a filter list and extracts unique domains,
+// cosmetic CSS rules, and scriptlet (##+js) rules. Uses bufio.Scanner for memory efficiency.
+func downloadAndParseDomains(url string) ([]string, []string, []string, error) {
 	client := &http.Client{Timeout: 90 * time.Second}
 
 	resp, err := client.Get(url)
 	if err != nil {
-		return nil, nil, fmt.Errorf("HTTP GET %s: %w", url, err)
+		return nil, nil, nil, fmt.Errorf("HTTP GET %s: %w", url, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+		return nil, nil, nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
 	}
 
 	seenDomains := make(map[string]struct{})
 	seenCSS := make(map[string]struct{})
+	seenScriptlets := make(map[string]struct{})
 	var domains []string
 	var cssRules []string
+	var scriptlets []string
 
 	scanner := bufio.NewScanner(resp.Body)
 	// Increase buffer for very long lines (some filter lists have them)
@@ -170,6 +180,19 @@ func downloadAndParseDomains(url string) ([]string, []string, error) {
 		// Skip obvious comments
 		if (strings.HasPrefix(rawLine, "! ") || strings.HasPrefix(rawLine, "# ")) &&
 			!strings.Contains(rawLine, "##") {
+			continue
+		}
+
+		// 0. Extract Scriptlet Rules — kept as raw filter-list lines. Both dialects:
+		//   uBlock:  domain##+js(name, args)
+		//   AdGuard: domain#%#//scriptlet('name', 'args')
+		// Exception forms (#@#+js, #@%#//scriptlet) don't contain these substrings,
+		// so they're naturally excluded.
+		if strings.Contains(rawLine, "##+js(") || strings.Contains(rawLine, "#%#//scriptlet(") {
+			if _, exists := seenScriptlets[rawLine]; !exists {
+				seenScriptlets[rawLine] = struct{}{}
+				scriptlets = append(scriptlets, rawLine)
+			}
 			continue
 		}
 
@@ -196,10 +219,13 @@ func downloadAndParseDomains(url string) ([]string, []string, error) {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, nil, fmt.Errorf("scanning response from %s: %w", url, err)
+		return nil, nil, nil, fmt.Errorf("scanning response from %s: %w", url, err)
 	}
 
-	return domains, cssRules, nil
+	// Sort scriptlets for deterministic output (matches `sort -u` semantics).
+	sort.Strings(scriptlets)
+
+	return domains, cssRules, scriptlets, nil
 }
 
 // parseDomainLine extracts a domain from a single line of a filter list.
@@ -569,13 +595,27 @@ func buildCSSFile(rules []string) []byte {
 	return buf.Bytes()
 }
 
+// buildScriptletsFile writes scriptlet rules as raw filter-list lines.
+// Each line is either a uBlock "##+js(...)" rule or an AdGuard "#%#//scriptlet(...)"
+// rule (optionally domain-prefixed). The engine consumes the file verbatim via
+// Engine.SetScriptletRules — unknown scriptlet names and exception variants are
+// dropped at parse time.
+func buildScriptletsFile(rules []string) []byte {
+	var buf bytes.Buffer
+	for _, rule := range rules {
+		buf.WriteString(rule)
+		buf.WriteByte('\n')
+	}
+	return buf.Bytes()
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // ZIP Archiver
 // ────────────────────────────────────────────────────────────────────────────
 
-// createZipArchive packages .trie, .bloom, .css, and info.json into a
+// createZipArchive packages .trie, .bloom, .css, .scriptlets, and info.json into a
 // single in-memory zip archive.
-func createZipArchive(name string, trieData, bloomData, cssData, infoData []byte) ([]byte, error) {
+func createZipArchive(name string, trieData, bloomData, cssData, scriptletData, infoData []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
@@ -586,6 +626,7 @@ func createZipArchive(name string, trieData, bloomData, cssData, infoData []byte
 		{name + ".trie", trieData},
 		{name + ".bloom", bloomData},
 		{name + ".css", cssData},
+		{name + ".scriptlets", scriptletData},
 		{"info.json", infoData},
 	}
 
