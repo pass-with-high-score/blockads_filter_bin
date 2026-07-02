@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"blockads-filtering/internal/config"
-	"blockads-filtering/internal/cron"
 	"blockads-filtering/internal/handler"
 	"blockads-filtering/internal/storage"
 	"blockads-filtering/internal/store"
@@ -26,7 +25,7 @@ func main() {
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
 	log.Println("╔══════════════════════════════════════════════════════╗")
 	log.Println("║   BlockAds Filter Compiler API                     ║")
-	log.Println("║   REST API · R2 Upload · PostgreSQL · Daily Cron   ║")
+	log.Println("║   REST API · R2 Upload · PostgreSQL                ║")
 	log.Println("╚══════════════════════════════════════════════════════╝")
 
 	// ── 1. Load configuration ──
@@ -84,10 +83,6 @@ func main() {
 		api.DELETE("/filters", handler.TokenAuthMiddleware(cfg), h.DeleteFilter)
 	}
 
-	// ── 5. Start daily cron scheduler ──
-	scheduler := cron.NewScheduler(db, r2, cfg)
-	scheduler.Start()
-	log.Println("✓ Cron scheduler started (daily @midnight UTC)")
 
 	// ── 6. Start HTTP server ──
 	srv := &http.Server{
@@ -115,8 +110,6 @@ func main() {
 	// Give outstanding requests 10 seconds to complete
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-
-	scheduler.Stop()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("✗ Server forced to shutdown: %v", err)
