@@ -221,6 +221,8 @@ func (h *BuildHandler) RebuildAll(c *gin.Context) {
 			// Validate
 			if err := compiler.ValidateFilterListURL(filter.URL); err != nil {
 				log.Printf("[API RebuildAll] URL validation failed for %s: %v", filter.URL, err)
+				_ = h.db.DeleteFilterByURL(bgCtx, filter.URL)
+				log.Printf("[API RebuildAll] Removed failed filter %s from DB", filter.URL)
 				continue
 			}
 
@@ -228,6 +230,8 @@ func (h *BuildHandler) RebuildAll(c *gin.Context) {
 			result, err := compiler.CompileFilterList(filter.Name, filter.URL)
 			if err != nil {
 				log.Printf("[API RebuildAll] Compilation failed for %s: %v", filter.URL, err)
+				_ = h.db.DeleteFilterByURL(bgCtx, filter.URL)
+				log.Printf("[API RebuildAll] Removed failed filter %s from DB", filter.URL)
 				continue
 			}
 
@@ -237,6 +241,8 @@ func (h *BuildHandler) RebuildAll(c *gin.Context) {
 			uploadCancel()
 			if err != nil {
 				log.Printf("[API RebuildAll] R2 upload failed for %s: %v", filter.URL, err)
+				_ = h.db.DeleteFilterByURL(bgCtx, filter.URL)
+				log.Printf("[API RebuildAll] Removed failed filter %s from DB", filter.URL)
 				continue
 			}
 
