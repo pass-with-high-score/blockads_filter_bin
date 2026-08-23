@@ -1,10 +1,6 @@
 import postgres from "postgres";
 
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-  throw new Error("DATABASE_URL is not set in environment variables");
-}
+const connectionString = process.env.DATABASE_URL || "postgres://dummy_user:dummy_password@localhost:5432/dummy_db";
 
 export const sql = postgres(connectionString, {
   max: 10,
