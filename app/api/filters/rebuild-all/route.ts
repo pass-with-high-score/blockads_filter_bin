@@ -60,16 +60,16 @@ export async function POST(req: NextRequest) {
           try {
             // Validate URL
             await validateFilterListURL(filter.url);
-            
+
             // Compile
             const result = await compileFilterList(filter.name, filter.url);
-            
+
             // Upload to R2
             let downloadUrl = await uploadFilter(filter.name, result.zipData);
-            
+
             // Cache-buster query param
             downloadUrl = `${downloadUrl}?v=${Math.floor(Date.now() / 1000)}`;
-            
+
             // Update Database
             await upsertFilter(
               filter.name,
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
               // Ignore S3 delete error
             }
             // Delete from Database
-            await deleteFilterByUrl(filter.url).catch(() => {});
+            await deleteFilterByUrl(filter.url).catch(() => { });
           }
         }
         console.log("[API RebuildAll] ✓ Background rebuild complete!");

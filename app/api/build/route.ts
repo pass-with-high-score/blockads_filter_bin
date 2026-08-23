@@ -78,6 +78,9 @@ export async function POST(req: NextRequest) {
     let result;
     try {
       result = await compileFilterList(name, url);
+      if (result.ruleCount === 0) {
+        throw new Error("No domain rules found in filter list");
+      }
     } catch (err: any) {
       return addCors(NextResponse.json(
         { status: "error", message: `Compilation failed: ${err.message}` },

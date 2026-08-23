@@ -17,6 +17,10 @@ async function main() {
         // 2. Compile
         const result = await compileFilterList(filter.name, filter.url);
 
+        if (result.ruleCount === 0) {
+          throw new Error("No domain rules found in filter list");
+        }
+
         // 3. Upload to R2
         let downloadUrl = await uploadFilter(filter.name, result.zipData);
 
