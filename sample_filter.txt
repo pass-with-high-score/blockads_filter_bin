@@ -1,0 +1,87 @@
+# ============================================
+# Test Filter List — All Supported Formats
+# ============================================
+# This file contains test domains in every format
+# that the parser supports, including wildcards.
+# Host it locally or on GitHub to test via custom filter URL.
+
+# ── Format 1: Hosts file (0.0.0.0) ──────────────
+0.0.0.0 ads.test-exact.com
+0.0.0.0 tracker.test-exact.com
+0.0.0.0 analytics.test-exact.com
+0.0.0.0 banner.test-exact.com
+0.0.0.0 popup.test-exact.com
+
+# ── Format 2: Hosts file (127.0.0.1) ────────────
+127.0.0.1 ads.test-loopback.com
+127.0.0.1 tracker.test-loopback.com
+127.0.0.1 pixel.test-loopback.com
+
+# ── Format 3: AdBlock syntax (||domain^) ────────
+||ads.test-adblock.com^
+||tracker.test-adblock.com^
+||analytics.test-adblock.com^
+||telemetry.test-adblock.com^
+||pixel.test-adblock.com^
+
+# ── Format 4: Bare domain ───────────────────────
+ads.test-bare.com
+tracker.test-bare.com
+analytics.test-bare.com
+spyware.test-bare.com
+
+# ── Format 5: Wildcard — Hosts (0.0.0.0) ────────
+0.0.0.0 *.wildcard-hosts.com
+0.0.0.0 *.ads.wildcard-hosts.com
+0.0.0.0 *.tracker.wildcard-hosts.com
+
+# ── Format 6: Wildcard — AdBlock (||*^) ──────────
+||*.wildcard-adblock.com^
+||*.ads.wildcard-adblock.com^
+||*.tracker.wildcard-adblock.com^
+||*.cdn.wildcard-adblock.com^
+
+# ── Format 7: Wildcard — Bare domain ────────────
+*.wildcard-bare.com
+*.ads.wildcard-bare.com
+*.tracker.wildcard-bare.com
+*.pixel.wildcard-bare.com
+
+# ── Format 8: Multi-level wildcard ──────────────
+*.*.double-wildcard.com
+*.*.*.triple-wildcard.com
+
+# ── Format 9: Parent domain blocking ────────────
+# Blocking "test-parent.com" should also block all subdomains
+test-parent.com
+
+# ── Domains that should NOT be blocked ──────────
+# (use these to verify no false positives)
+# safe.example.com         — not in any list
+# google.com               — not in any list  
+# wildcard-hosts.com       — only *.wildcard-hosts.com, not exact
+# wildcard-adblock.com     — only *.wildcard-adblock.com, not exact
+
+# ============================================
+# TEST MATRIX
+# ============================================
+#
+# SHOULD BE BLOCKED:
+# ✓ ads.test-exact.com          (hosts 0.0.0.0)
+# ✓ tracker.test-loopback.com   (hosts 127.0.0.1)
+# ✓ ads.test-adblock.com        (adblock ||^)
+# ✓ ads.test-bare.com           (bare domain)
+# ✓ x.wildcard-hosts.com        (wildcard hosts)
+# ✓ foo.ads.wildcard-hosts.com  (wildcard hosts sub)
+# ✓ y.wildcard-adblock.com      (wildcard adblock)
+# ✓ z.wildcard-bare.com         (wildcard bare)
+# ✓ a.b.double-wildcard.com     (multi-level wildcard)
+# ✓ sub.test-parent.com         (parent domain block)
+# ✓ deep.sub.test-parent.com    (parent domain block)
+#
+# SHOULD NOT BE BLOCKED:
+# ✗ wildcard-hosts.com          (only *.wildcard-hosts.com)
+# ✗ wildcard-adblock.com        (only *.wildcard-adblock.com)
+# ✗ wildcard-bare.com           (only *.wildcard-bare.com)
+# ✗ google.com                  (not in list)
+# ✗ safe.example.com            (not in list)
