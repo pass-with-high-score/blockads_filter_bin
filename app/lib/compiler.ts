@@ -31,12 +31,25 @@ export function parseDomainLine(line: string): string {
   if (line.startsWith("||")) {
     domain = line.slice(2);
     if (/[\/\*\?]/.test(domain)) return "";
+
+    // Inspect options after $ (e.g. $domain=..., $third-party, $badfilter, $script, etc.)
+    const dollarIdx = domain.indexOf('$');
+    if (dollarIdx !== -1) {
+      const options = domain.slice(dollarIdx + 1);
+      const opts = options.split(',');
+      for (let opt of opts) {
+        opt = opt.trim();
+        if (opt === "" || opt === "important" || opt === "empty" || opt === "mp4") {
+          continue;
+        }
+        // Any contextual browser rule (e.g. $domain=sarapbabe.com) must NOT become a global DNS block
+        return "";
+      }
+      domain = domain.slice(0, dollarIdx);
+    }
     
     const carrotIdx = domain.indexOf('^');
     if (carrotIdx !== -1) domain = domain.slice(0, carrotIdx);
-    
-    const dollarIdx = domain.indexOf('$');
-    if (dollarIdx !== -1) domain = domain.slice(0, dollarIdx);
   } else if (
     line.startsWith("0.0.0.0 ") ||
     line.startsWith("0.0.0.0\t") ||
