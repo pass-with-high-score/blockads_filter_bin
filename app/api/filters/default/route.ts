@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   try {
     await ensureMigration();
 
-    // Query all default filters
+    // Query all default filters with both legacy and zip URLs
     const rows = await sql`
       SELECT 
         COALESCE(filter_id, name) as id,
@@ -39,7 +39,30 @@ export async function GET(req: NextRequest) {
       ORDER BY id ASC
     `;
 
-    return addCors(NextResponse.json(rows));
+    // Map each item to provide both modern downloadUrl and legacy individual URLs
+    const results = rows.map((r: any) => {
+      const zipUrl = r.downloadUrl;
+      const baseR2 = zipUrl.replace(/\.zip(\?.*)?$/, "");
+      const queryParam = zipUrl.includes("?") ? zipUrl.slice(zipUrl.indexOf("?")) : "";
+
+      return {
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        isEnabled: r.isEnabled,
+        isBuiltIn: r.isBuiltIn,
+        category: r.category,
+        ruleCount: r.ruleCount,
+        downloadUrl: zipUrl,
+        originalUrl: r.originalUrl,
+        bloomUrl: `${baseR2}.bloom${queryParam}`,
+        trieUrl: `${baseR2}.trie${queryParam}`,
+        cssUrl: `${baseR2}.css${queryParam}`,
+        scriptletsUrl: `${baseR2}.scriptlets${queryParam}`,
+      };
+    });
+
+    return addCors(NextResponse.json(results));
   } catch (err: any) {
     console.error("[API] GET /api/filters/default failed:", err);
     return addCors(
