@@ -259,10 +259,24 @@ func parseDomainLine(line string) string {
 			return ""
 		}
 
-		if idx := strings.IndexByte(domain, '^'); idx != -1 {
-			domain = domain[:idx]
+		// Inspect options after $ (e.g. $domain=..., $third-party, $badfilter, $script, etc.)
+		if dollarIdx := strings.IndexByte(domain, '$'); dollarIdx != -1 {
+			options := domain[dollarIdx+1:]
+			// Any rule with domain scoping ($domain=), 3rd party scoping ($third-party, $3p),
+			// invalidation ($badfilter), or specific resource constraints ($image, $script, etc.)
+			// is a contextual browser rule. Converting these into DNS blocks over-blocks domains globally
+			// (e.g. ||youtube.com^$domain=sarapbabe.com would block YouTube entirely!).
+			for _, opt := range strings.Split(options, ",") {
+				opt = strings.TrimSpace(opt)
+				if opt == "" || opt == "important" || opt == "empty" || opt == "mp4" {
+					continue
+				}
+				return ""
+			}
+			domain = domain[:dollarIdx]
 		}
-		if idx := strings.IndexByte(domain, '$'); idx != -1 {
+
+		if idx := strings.IndexByte(domain, '^'); idx != -1 {
 			domain = domain[:idx]
 		}
 
