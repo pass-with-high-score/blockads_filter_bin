@@ -18,6 +18,17 @@ func TestParseDomainLine(t *testing.T) {
 		{"127.0.0.1 ad.server.com # comment", "ad.server.com"},
 		{"! comment", ""},
 		{"##.ad-banner", ""},
+		{"vietnamnet.vn##.article-banner", ""},
+		{"sarapbabe.com##.-120-600", ""},
+		{"example.com#?#.ad", ""},
+		{"example.com#@#.ad", ""},
+		{"example.com#%#//scriptlet", ""},
+		{"-120-600", ""},
+		{"ad-widget.", ""},
+		{".leadingdot.com", ""},
+		{"trailingdot.com.", ""},
+		{"double..dot.com", ""},
+		{"invalid_char!.com", ""},
 		{"@@||whitelist.com^", ""},
 	}
 

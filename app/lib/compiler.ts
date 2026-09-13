@@ -24,6 +24,11 @@ export function parseDomainLine(line: string): string {
   if (line[0] === '#' || line[0] === '!') return "";
   if (line.startsWith("@@")) return "";
   
+  // Cosmetic element-hiding, CSS injection, or scriptlet rules are never DNS domains
+  if (line.includes("##") || line.includes("#@#") || line.includes("#?#") || line.includes("#$#") || line.includes("#%#")) {
+    return "";
+  }
+  
   const containsAnyUnsafe = /[\$\/\\\*]/.test(line);
   if (containsAnyUnsafe && !line.startsWith("||")) return "";
   
@@ -63,8 +68,13 @@ export function parseDomainLine(line: string): string {
     const hashIdx = domain.indexOf('#');
     if (hashIdx !== -1) domain = domain.slice(0, hashIdx);
   } else {
-    if (!/\s/.test(line) && line.includes(".")) {
-      domain = line;
+    let cleanLine = line;
+    const hashIdx = cleanLine.indexOf('#');
+    if (hashIdx !== -1) {
+      cleanLine = cleanLine.slice(0, hashIdx).trim();
+    }
+    if (!/\s/.test(cleanLine) && cleanLine.includes(".")) {
+      domain = cleanLine;
     }
   }
   
@@ -85,6 +95,15 @@ export function parseDomainLine(line: string): string {
     if (/^[0-9\.]+$/.test(domain)) {
       return "";
     }
+  }
+
+  // Validate valid hostname labels [a-z0-9-]
+  const labels = domain.split('.');
+  if (labels.length < 2) return "";
+  for (const label of labels) {
+    if (label.length === 0 || label.length > 63) return "";
+    if (label.startsWith('-') || label.endsWith('-')) return "";
+    if (!/^[a-z0-9-]+$/.test(label)) return "";
   }
   
   return domain;

@@ -241,6 +241,11 @@ func parseDomainLine(line string) string {
 	if strings.HasPrefix(line, "@@") {
 		return ""
 	}
+	// Cosmetic element-hiding, CSS injection, or scriptlet rules are never DNS domains
+	if strings.Contains(line, "##") || strings.Contains(line, "#@#") || strings.Contains(line, "#?#") ||
+		strings.Contains(line, "#$#") || strings.Contains(line, "#%#") {
+		return ""
+	}
 	if strings.ContainsAny(line, "$/\\*") && !strings.HasPrefix(line, "||") {
 		return ""
 	}
@@ -293,8 +298,13 @@ func parseDomainLine(line string) string {
 		}
 
 	default:
-		if !strings.ContainsAny(line, " \t") && strings.Contains(line, ".") {
-			domain = line
+		// Plain domain format: example.com (or example.com # comment)
+		cleanLine := line
+		if idx := strings.IndexByte(cleanLine, '#'); idx != -1 {
+			cleanLine = strings.TrimSpace(cleanLine[:idx])
+		}
+		if !strings.ContainsAny(cleanLine, " \t") && strings.Contains(cleanLine, ".") {
+			domain = cleanLine
 		}
 	}
 
@@ -317,6 +327,25 @@ func parseDomainLine(line string) string {
 		}
 		if allDigitsOrDots {
 			return ""
+		}
+	}
+
+	// Validate valid hostname labels [a-z0-9-]
+	labels := strings.Split(domain, ".")
+	if len(labels) < 2 {
+		return ""
+	}
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 {
+			return ""
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return ""
+		}
+		for _, c := range label {
+			if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+				return ""
+			}
 		}
 	}
 
