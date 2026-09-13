@@ -103,11 +103,12 @@ export async function downloadAndParseDomains(url: string) {
       const rawLine = line.trim();
       if (rawLine === "") continue;
       
-      // Skip obvious comments
-      if ((rawLine.startsWith("! ") || rawLine.startsWith("# ")) && !rawLine.includes("##")) {
+      // 1. Skip comments and empty lines
+      if (rawLine === "" || rawLine.startsWith("!") || (rawLine.startsWith("#") && !rawLine.startsWith("##"))) {
         continue;
       }
       
+      // 2. Extract Scriptlet Rules
       if (rawLine.includes("##+js(") || rawLine.includes("#%#//scriptlet(")) {
         if (!seenScriptlets.has(rawLine)) {
           seenScriptlets.add(rawLine);
@@ -116,16 +117,18 @@ export async function downloadAndParseDomains(url: string) {
         continue;
       }
       
+      // 3. Extract Generic Cosmetic CSS Rules (strip leading ## to produce valid selectors)
       if (
-        rawLine.includes("##") &&
-        !rawLine.includes("#@#") &&
+        rawLine.startsWith("##") &&
         !rawLine.includes("##+js") &&
         !rawLine.includes("##^")
       ) {
-        if (!seenCSS.has(rawLine)) {
-          seenCSS.add(rawLine);
-          cssRules.push(rawLine);
+        const selector = rawLine.slice(2).trim();
+        if (selector && !seenCSS.has(selector)) {
+          seenCSS.add(selector);
+          cssRules.push(selector);
         }
+        continue;
       }
       
       const domain = parseDomainLine(rawLine);

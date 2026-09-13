@@ -177,17 +177,14 @@ func downloadAndParseDomains(url string) ([]string, []string, []string, error) {
 	for scanner.Scan() {
 		rawLine := strings.TrimSpace(scanner.Text())
 
-		// Skip obvious comments
-		if (strings.HasPrefix(rawLine, "! ") || strings.HasPrefix(rawLine, "# ")) &&
-			!strings.Contains(rawLine, "##") {
+		// 1. Skip comments and empty lines
+		if rawLine == "" || strings.HasPrefix(rawLine, "!") || (strings.HasPrefix(rawLine, "#") && !strings.HasPrefix(rawLine, "##")) {
 			continue
 		}
 
-		// 0. Extract Scriptlet Rules — kept as raw filter-list lines. Both dialects:
+		// 2. Extract Scriptlet Rules — kept as raw filter-list lines. Both dialects:
 		//   uBlock:  domain##+js(name, args)
 		//   AdGuard: domain#%#//scriptlet('name', 'args')
-		// Exception forms (#@#+js, #@%#//scriptlet) don't contain these substrings,
-		// so they're naturally excluded.
 		if strings.Contains(rawLine, "##+js(") || strings.Contains(rawLine, "#%#//scriptlet(") {
 			if _, exists := seenScriptlets[rawLine]; !exists {
 				seenScriptlets[rawLine] = struct{}{}
@@ -196,16 +193,18 @@ func downloadAndParseDomains(url string) ([]string, []string, []string, error) {
 			continue
 		}
 
-		// 1. Extract Cosmetic Rules (pass raw lines through to engine)
-		if strings.Contains(rawLine, "##") &&
-			!strings.Contains(rawLine, "#@#") &&
+		// 3. Extract Generic Cosmetic CSS Rules (strip leading ## to produce valid selectors)
+		if strings.HasPrefix(rawLine, "##") &&
 			!strings.Contains(rawLine, "##+js") &&
 			!strings.Contains(rawLine, "##^") {
-
-			if _, exists := seenCSS[rawLine]; !exists {
-				seenCSS[rawLine] = struct{}{}
-				cssRules = append(cssRules, rawLine)
+			selector := strings.TrimPrefix(rawLine, "##")
+			if selector != "" {
+				if _, exists := seenCSS[selector]; !exists {
+					seenCSS[selector] = struct{}{}
+					cssRules = append(cssRules, selector)
+				}
 			}
+			continue
 		}
 
 		// 2. Extract Domains
