@@ -83,7 +83,7 @@ export async function downloadAndParseDomains(url: string) {
   const id = setTimeout(() => controller.abort(), 90000);
 
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetch(url, { signal: controller.signal, headers: { "Accept-Encoding": "identity" } });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} for ${url}`);
     }
@@ -457,7 +457,7 @@ export async function validateFilterListURL(url: string): Promise<void> {
 
   // Stage 3: Content Sniffing (GET request)
   const resp = await fetch(url, {
-    headers: { Range: "bytes=0-16383" },
+    headers: { Range: "bytes=0-16383", "Accept-Encoding": "identity" },
     signal: AbortSignal.timeout(15000),
   });
 
@@ -466,7 +466,10 @@ export async function validateFilterListURL(url: string): Promise<void> {
     responseText = await resp.text();
   } else {
     // Fallback to normal GET if range request failed
-    const fallbackResp = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    const fallbackResp = await fetch(url, { 
+      headers: { "Accept-Encoding": "identity" },
+      signal: AbortSignal.timeout(15000) 
+    });
     if (!fallbackResp.ok) {
       throw new Error(`URL returned HTTP ${fallbackResp.status}`);
     }
