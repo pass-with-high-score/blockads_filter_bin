@@ -55,6 +55,5 @@ rebuild.log
 .wrangler
 .dev.vars*
 !.dev.vars.example
-wrangler.jsonc
 wrangler.toml
 !wrangler.example.jsonc
