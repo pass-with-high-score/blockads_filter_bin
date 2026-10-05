@@ -23,8 +23,9 @@ export default function CompilerForm() {
 
     try {
       // In a real environment, this might be configured differently based on deployment.
-      // Clean up baseUrl trailing slash if any
-      const rawBaseUrl = process.env.NEXT_PUBLIC_COMPILER_API_URL || "";
+      // Clean up baseUrl trailing slash if any; ignore [SENSITIVE] placeholder
+      const envUrl = process.env.NEXT_PUBLIC_COMPILER_API_URL;
+      const rawBaseUrl = (envUrl && envUrl !== "[SENSITIVE]") ? envUrl : "";
       const baseUrl = rawBaseUrl.endsWith("/") ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
       
       const res = await fetch(`${baseUrl}/api/build`, {
@@ -35,7 +36,14 @@ export default function CompilerForm() {
         body: JSON.stringify({ url: url.trim() }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type") || "";
+      let data: any = {};
+      if (contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(`Server returned ${res.status}: ${text.slice(0, 120)}`);
+      }
 
       if (!res.ok || data.status === "error") {
         throw new Error(data.message || "An unknown error occurred.");

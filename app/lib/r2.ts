@@ -1,29 +1,36 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 
-const accountId = process.env.R2_ACCOUNT_ID;
-const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-const bucketName = process.env.R2_BUCKET_NAME || "blockads-filters";
-const publicUrl = process.env.R2_PUBLIC_URL || "";
+let s3Client: S3Client | null = null;
 
-if (!accountId || !accessKeyId || !secretAccessKey) {
-  throw new Error("R2 environment variables are not fully configured");
+export function getS3(): S3Client {
+  if (s3Client) return s3Client;
+
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    throw new Error("R2 environment variables are not fully configured");
+  }
+
+  s3Client = new S3Client({
+    region: "auto",
+    endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+    forcePathStyle: true, // Equivalent to Go's UsePathStyle = true
+  });
+  return s3Client;
 }
 
-export const s3 = new S3Client({
-  region: "auto",
-  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-  credentials: {
-    accessKeyId,
-    secretAccessKey,
-  },
-  forcePathStyle: true, // Equivalent to Go's UsePathStyle = true
-});
-
 export async function uploadFilter(name: string, data: Buffer): Promise<string> {
+  const bucketName = process.env.R2_BUCKET_NAME || "blockads-filters";
+  const publicUrl = process.env.R2_PUBLIC_URL || "";
   const key = `${name}.zip`;
   
-  await s3.send(new PutObjectCommand({
+  await getS3().send(new PutObjectCommand({
     Bucket: bucketName,
     Key: key,
     Body: data,
@@ -35,9 +42,10 @@ export async function uploadFilter(name: string, data: Buffer): Promise<string> 
 }
 
 export async function deleteFilter(name: string): Promise<void> {
+  const bucketName = process.env.R2_BUCKET_NAME || "blockads-filters";
   const key = `${name}.zip`;
   
-  await s3.send(new DeleteObjectCommand({
+  await getS3().send(new DeleteObjectCommand({
     Bucket: bucketName,
     Key: key,
   }));

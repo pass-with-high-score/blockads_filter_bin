@@ -47,3 +47,14 @@ yarn-error.log*
 pnpm-debug.log*
 rebuild.log
 *.log
+
+# OpenNext
+.open-next
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+wrangler.jsonc
+wrangler.toml
+!wrangler.example.jsonc

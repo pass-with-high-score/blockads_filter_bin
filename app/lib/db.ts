@@ -1,11 +1,38 @@
 import postgres from "postgres";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
-const connectionString = process.env.DATABASE_URL || "postgres://dummy_user:dummy_password@localhost:5432/dummy_db";
+function getConnectionString(): string {
+  try {
+    const ctx = getCloudflareContext();
+    if ((ctx?.env as any)?.HYPERDRIVE?.connectionString) {
+      return (ctx.env as any).HYPERDRIVE.connectionString;
+    }
+  } catch {
+    // Not running inside a Cloudflare request context or during build
+  }
+  const rawDbUrl = process.env.DATABASE_URL;
+  if (rawDbUrl && rawDbUrl !== "[SENSITIVE]" && (rawDbUrl.startsWith("postgres://") || rawDbUrl.startsWith("postgresql://"))) {
+    return rawDbUrl;
+  }
+  return "postgres://dummy_user:dummy_password@localhost:5432/dummy_db";
+}
 
-export const sql = postgres(connectionString, {
-  max: 10,
-  idle_timeout: 30,
-  connect_timeout: 10,
+function getSql() {
+  const connStr = getConnectionString();
+  return postgres(connStr, {
+    max: 1,
+    idle_timeout: 15,
+    connect_timeout: 10,
+  });
+}
+
+export const sql = new Proxy((() => {}) as unknown as ReturnType<typeof postgres>, {
+  apply(_target, _thisArg, argArray) {
+    return (getSql() as any)(...argArray);
+  },
+  get(_target, prop) {
+    return (getSql() as any)[prop];
+  },
 });
 
 // Run migrations on start

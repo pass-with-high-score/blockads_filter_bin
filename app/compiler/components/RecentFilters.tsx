@@ -46,7 +46,8 @@ export default function RecentFilters() {
     const fetchFilters = async () => {
       try {
         setIsLoading(true);
-        const rawBaseUrl = process.env.NEXT_PUBLIC_COMPILER_API_URL || "";
+        const envUrl = process.env.NEXT_PUBLIC_COMPILER_API_URL;
+        const rawBaseUrl = (envUrl && envUrl !== "[SENSITIVE]") ? envUrl : "";
         const baseUrl = rawBaseUrl.endsWith("/") ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
         
         const params = new URLSearchParams({
@@ -59,11 +60,16 @@ export default function RecentFilters() {
           params.append("search", searchQuery);
         }
 
-        const res = await fetch(`${baseUrl}/api/filters?${params.toString()}`, {
-            // Provide a cache setting if necessary, Next.js handles it well, but standard fetch behavior is fine
-        });
+        const res = await fetch(`${baseUrl}/api/filters?${params.toString()}`);
         
-        const data = await res.json();
+        const contentType = res.headers.get("content-type") || "";
+        let data: any = {};
+        if (contentType.includes("application/json")) {
+          data = await res.json();
+        } else {
+          const text = await res.text();
+          throw new Error(`Server returned ${res.status}: ${text.slice(0, 120)}`);
+        }
 
         if (!res.ok || data.status === "error") {
           throw new Error(data.message || "Failed to load recent filters.");

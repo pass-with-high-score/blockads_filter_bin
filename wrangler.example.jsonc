@@ -1,0 +1,41 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"main": ".open-next/worker.js",
+	"name": "blockads-filtering",
+	"compatibility_date": "2026-10-05",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"vars": {
+		"R2_BUCKET_NAME": "blockads-filters",
+		"R2_PUBLIC_URL": "https://filter.example.com",
+		"R2_ACCOUNT_ID": "your_cloudflare_account_id"
+	},
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "blockads-filtering"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "NEXT_INC_CACHE_R2_BUCKET",
+			"bucket_name": "blockads-website-opennext-cache"
+		}
+	],
+	"images": {
+		"binding": "IMAGES"
+	},
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "your_hyperdrive_id",
+			"localConnectionString": "postgresql://user:password@localhost:5432/postgres"
+		}
+	]
+}
