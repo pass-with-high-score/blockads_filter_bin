@@ -20,10 +20,46 @@ export async function OPTIONS() {
 
 export const revalidate = 3600;
 
+// In-memory cache per worker isolate (10 minutes)
+let memoryCache: { body: any; expiresAt: number } | null = null;
+const CACHE_TTL_MS = 10 * 60 * 1000;
+
 export async function GET(req: NextRequest) {
   try {
+    // 1. Check in-memory isolate cache
+    if (memoryCache && Date.now() < memoryCache.expiresAt) {
+      const res = NextResponse.json(memoryCache.body, {
+        headers: {
+          "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+          "X-Worker-Cache": "MEMORY-HIT",
+        },
+      });
+      return addCors(res);
+    }
 
-    // Query all default filters with both legacy and zip URLs
+    // 2. Check Cloudflare Edge Cache API
+    const cfCache = typeof caches !== "undefined" ? (caches as any).default : null;
+    const cacheUrl = new URL(req.url).origin + "/api/filters/default";
+    if (cfCache) {
+      try {
+        const cachedRes = await cfCache.match(cacheUrl);
+        if (cachedRes) {
+          const data = await cachedRes.json();
+          memoryCache = { body: data, expiresAt: Date.now() + CACHE_TTL_MS };
+          const res = NextResponse.json(data, {
+            headers: {
+              "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+              "X-Worker-Cache": "EDGE-HIT",
+            },
+          });
+          return addCors(res);
+        }
+      } catch {
+        // Ignore cache lookup error
+      }
+    }
+
+    // 3. Query Database via Supabase Hyperdrive
     const rows = await sql`
       SELECT 
         COALESCE(filter_id, name) as id,
@@ -63,11 +99,31 @@ export async function GET(req: NextRequest) {
       };
     });
 
+    // Save to in-memory cache
+    memoryCache = { body: results, expiresAt: Date.now() + CACHE_TTL_MS };
+
     const response = NextResponse.json(results, {
       headers: {
         "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+        "X-Worker-Cache": "MISS",
       },
     });
+
+    // Save to Cloudflare Edge Cache
+    if (cfCache) {
+      try {
+        const cacheStoreRes = new Response(JSON.stringify(results), {
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=3600",
+          },
+        });
+        await cfCache.put(cacheUrl, cacheStoreRes);
+      } catch {
+        // Ignore cache put error
+      }
+    }
+
     return addCors(response);
   } catch (err: any) {
     console.error("[API] GET /api/filters/default failed:", err);
