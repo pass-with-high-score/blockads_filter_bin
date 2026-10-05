@@ -18,9 +18,10 @@ export async function OPTIONS() {
   return addCors(new NextResponse(null, { status: 204 }));
 }
 
+export const revalidate = 3600;
+
 export async function GET(req: NextRequest) {
   try {
-    await ensureMigration();
 
     // Query all default filters with both legacy and zip URLs
     const rows = await sql`
@@ -62,7 +63,12 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    return addCors(NextResponse.json(results));
+    const response = NextResponse.json(results, {
+      headers: {
+        "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400",
+      },
+    });
+    return addCors(response);
   } catch (err: any) {
     console.error("[API] GET /api/filters/default failed:", err);
     return addCors(

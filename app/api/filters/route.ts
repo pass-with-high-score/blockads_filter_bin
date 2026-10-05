@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     const { data, total } = await getFiltersPaginated(page, limit, search, sort, order);
     const totalPages = Math.ceil(total / limit);
 
-    return addCors(NextResponse.json({
+    const response = NextResponse.json({
       data,
       meta: {
         currentPage: page,
@@ -40,7 +40,12 @@ export async function GET(req: NextRequest) {
         totalRecords: total,
         totalPages,
       },
-    }));
+    }, {
+      headers: {
+        "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
+      },
+    });
+    return addCors(response);
   } catch (err: any) {
     console.error("[API] GET /api/filters failed:", err);
     return addCors(NextResponse.json(

@@ -121,7 +121,6 @@ export async function upsertFilter(
   ruleCount: number,
   fileSize: number
 ): Promise<FilterList> {
-  await ensureMigration();
   const rows = await sql`
     INSERT INTO filter_lists (name, url, r2_download_link, rule_count, file_size, last_updated)
     VALUES (${name}, ${url}, ${r2DownloadLink}, ${ruleCount}, ${fileSize}, NOW())
@@ -137,7 +136,6 @@ export async function upsertFilter(
 }
 
 export async function getFilterByUrl(url: string): Promise<FilterList | null> {
-  await ensureMigration();
   const rows = await sql`
     SELECT id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
     FROM filter_lists
@@ -148,7 +146,6 @@ export async function getFilterByUrl(url: string): Promise<FilterList | null> {
 }
 
 export async function deleteFilterByUrl(url: string): Promise<boolean> {
-  await ensureMigration();
   const result = await sql`
     DELETE FROM filter_lists WHERE url = ${url}
   `;
@@ -156,7 +153,6 @@ export async function deleteFilterByUrl(url: string): Promise<boolean> {
 }
 
 export async function getAllFilters(): Promise<FilterList[]> {
-  await ensureMigration();
   const rows = await sql`
     SELECT id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
     FROM filter_lists
@@ -172,7 +168,6 @@ export async function getFiltersPaginated(
   sort?: string,
   order?: string
 ): Promise<{ data: FilterList[]; total: number }> {
-  await ensureMigration();
   const offset = (page - 1) * limit;
 
   // Determine order column
