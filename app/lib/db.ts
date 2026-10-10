@@ -83,6 +83,24 @@ export async function ensureMigration() {
     await sql`
       CREATE INDEX IF NOT EXISTS idx_filter_lists_url ON filter_lists (url);
     `;
+
+    // Add content_hash column for detecting unchanged filter lists
+    await sql`
+      ALTER TABLE filter_lists ADD COLUMN IF NOT EXISTS content_hash TEXT NOT NULL DEFAULT '';
+    `;
+
+    // Create table for domain liveness cache (TTL-based)
+    await sql`
+      CREATE TABLE IF NOT EXISTS domain_liveness_cache (
+        domain TEXT PRIMARY KEY,
+        is_alive BOOLEAN NOT NULL,
+        last_checked TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_domain_liveness_last_checked ON domain_liveness_cache (last_checked);
+    `;
+
     console.log("PostgreSQL schema migrations complete!");
   })();
 
@@ -96,6 +114,7 @@ export interface FilterList {
   r2DownloadLink: string;
   ruleCount: number;
   fileSize: string;
+  contentHash?: string;
   lastUpdated: string;
   createdAt: string;
 }
@@ -109,6 +128,7 @@ function mapFilterRow(row: any): FilterList {
     r2DownloadLink: row.r2_download_link,
     ruleCount: row.rule_count,
     fileSize: row.file_size,
+    contentHash: row.content_hash || "",
     lastUpdated: row.last_updated instanceof Date ? row.last_updated.toISOString() : new Date(row.last_updated).toISOString(),
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
   };
@@ -119,25 +139,69 @@ export async function upsertFilter(
   url: string,
   r2DownloadLink: string,
   ruleCount: number,
-  fileSize: number
+  fileSize: number,
+  contentHash: string = ""
 ): Promise<FilterList> {
   const rows = await sql`
-    INSERT INTO filter_lists (name, url, r2_download_link, rule_count, file_size, last_updated)
-    VALUES (${name}, ${url}, ${r2DownloadLink}, ${ruleCount}, ${fileSize}, NOW())
+    INSERT INTO filter_lists (name, url, r2_download_link, rule_count, file_size, content_hash, last_updated)
+    VALUES (${name}, ${url}, ${r2DownloadLink}, ${ruleCount}, ${fileSize}, ${contentHash}, NOW())
     ON CONFLICT (url) DO UPDATE
     SET name             = EXCLUDED.name,
         r2_download_link = EXCLUDED.r2_download_link,
         rule_count       = EXCLUDED.rule_count,
         file_size        = EXCLUDED.file_size,
+        content_hash     = EXCLUDED.content_hash,
         last_updated     = NOW()
-    RETURNING id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
+    RETURNING id, name, url, r2_download_link, rule_count, file_size, content_hash, last_updated, created_at
   `;
   return mapFilterRow(rows[0]);
 }
 
+export async function getCachedDomainsLiveness(
+  domains: string[],
+  maxAgeDays: number = 7
+): Promise<Map<string, boolean>> {
+  if (domains.length === 0) return new Map();
+  const result = new Map<string, boolean>();
+  const chunkSize = 2000;
+  for (let i = 0; i < domains.length; i += chunkSize) {
+    const chunk = domains.slice(i, i + chunkSize);
+    const rows = await sql`
+      SELECT domain, is_alive
+      FROM domain_liveness_cache
+      WHERE domain = ANY(${chunk})
+        AND last_checked >= NOW() - (${maxAgeDays} || ' days')::INTERVAL
+    `;
+    for (const r of rows) {
+      result.set(r.domain, r.is_alive);
+    }
+  }
+  return result;
+}
+
+export async function batchUpsertDomainLiveness(
+  entries: { domain: string; isAlive: boolean }[]
+): Promise<void> {
+  if (entries.length === 0) return;
+  const chunkSize = 1000;
+  for (let i = 0; i < entries.length; i += chunkSize) {
+    const chunk = entries.slice(i, i + chunkSize);
+    const dbRows = chunk.map((c) => ({
+      domain: c.domain,
+      is_alive: c.isAlive,
+    }));
+    await sql`
+      INSERT INTO domain_liveness_cache ${sql(dbRows, "domain", "is_alive")}
+      ON CONFLICT (domain) DO UPDATE
+      SET is_alive = EXCLUDED.is_alive,
+          last_checked = NOW()
+    `;
+  }
+}
+
 export async function getFilterByUrl(url: string): Promise<FilterList | null> {
   const rows = await sql`
-    SELECT id, name, url, r2_download_link, rule_count, file_size, last_updated, created_at
+    SELECT id, name, url, r2_download_link, rule_count, file_size, content_hash, last_updated, created_at
     FROM filter_lists
     WHERE url = ${url}
   `;

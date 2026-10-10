@@ -14,8 +14,13 @@ async function main() {
         // 1. Validate
         await validateFilterListURL(filter.url);
 
-        // 2. Compile
-        const result = await compileFilterList(filter.name, filter.url);
+        // 2. Compile (with contentHash check)
+        const result = await compileFilterList(filter.name, filter.url, filter.contentHash);
+
+        if (result.skipped) {
+          console.log(`⏩ '${filter.name}' has not changed since last build. Skipped.`);
+          continue;
+        }
 
         if (result.ruleCount === 0) {
           throw new Error("No domain rules found in filter list");
@@ -33,7 +38,8 @@ async function main() {
           filter.url,
           downloadUrl,
           result.ruleCount,
-          result.fileSize
+          result.fileSize,
+          result.contentHash
         );
         console.log(`✓ Successfully rebuilt '${filter.name}'`);
       } catch (err: any) {

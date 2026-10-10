@@ -12,6 +12,8 @@ export interface CompileResult {
   zipData: Buffer;
   ruleCount: number;
   fileSize: number;
+  contentHash?: string;
+  skipped?: boolean;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -121,6 +123,7 @@ export async function downloadAndParseDomains(url: string) {
     }
     
     const text = await response.text();
+    const contentHash = crypto.createHash("sha256").update(text).digest("hex");
     const lines = text.split(/\r?\n/);
     
     const seenDomains = new Set<string>();
@@ -173,7 +176,7 @@ export async function downloadAndParseDomains(url: string) {
     }
     
     scriptlets.sort();
-    return { domains, cssRules, scriptlets };
+    return { domains, cssRules, scriptlets, contentHash };
   } finally {
     clearTimeout(id);
   }
@@ -390,11 +393,27 @@ export class BloomFilter {
 // Orchestrator
 // ────────────────────────────────────────────────────────────────────────────
 
-export async function compileFilterList(name: string, url: string): Promise<CompileResult> {
+export async function compileFilterList(
+  name: string,
+  url: string,
+  previousContentHash?: string
+): Promise<CompileResult> {
   const startTime = Date.now();
   console.log(`[${name}] ▶ Starting compilation: ${url}`);
 
-  const { domains, cssRules, scriptlets } = await downloadAndParseDomains(url);
+  const { domains, cssRules, scriptlets, contentHash } = await downloadAndParseDomains(url);
+
+  if (previousContentHash && previousContentHash === contentHash) {
+    console.log(`[${name}] ⏩ Content hash identical (${contentHash.slice(0, 8)}). Skipping re-compilation.`);
+    return {
+      zipData: Buffer.alloc(0),
+      ruleCount: domains.length,
+      fileSize: 0,
+      contentHash,
+      skipped: true,
+    };
+  }
+
   console.log(`[${name}] ✓ Parsed ${domains.length} domains, ${cssRules.length} CSS rules, ${scriptlets.length} scriptlets in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
 
   if (domains.length === 0 && cssRules.length === 0 && scriptlets.length === 0) {
@@ -456,6 +475,8 @@ export async function compileFilterList(name: string, url: string): Promise<Comp
     zipData,
     ruleCount: domains.length,
     fileSize: zipData.length,
+    contentHash,
+    skipped: false,
   };
 }
 

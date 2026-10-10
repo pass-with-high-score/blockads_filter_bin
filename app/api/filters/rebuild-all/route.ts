@@ -61,8 +61,13 @@ export async function POST(req: NextRequest) {
             // Validate URL
             await validateFilterListURL(filter.url);
 
-            // Compile
-            const result = await compileFilterList(filter.name, filter.url);
+            // Compile (with contentHash check)
+            const result = await compileFilterList(filter.name, filter.url, filter.contentHash);
+
+            if (result.skipped) {
+              console.log(`[API RebuildAll] ⏩ '${filter.name}' has not changed since last build. Skipped.`);
+              continue;
+            }
 
             // Upload to R2
             let downloadUrl = await uploadFilter(filter.name, result.zipData);
@@ -76,7 +81,8 @@ export async function POST(req: NextRequest) {
               filter.url,
               downloadUrl,
               result.ruleCount,
-              result.fileSize
+              result.fileSize,
+              result.contentHash
             );
             console.log(`[API RebuildAll] ✓ Successfully rebuilt '${filter.name}'`);
           } catch (err: any) {
