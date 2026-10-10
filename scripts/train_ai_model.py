@@ -86,16 +86,23 @@ def split_domain_parts(domain: str) -> tuple[list[str], str, str]:
         tld = parts[-1] if len(parts) >= 1 else ""
     return subdomains, sld, tld
 
+BENIGN_AD_WORDS = {
+    "admin", "address", "adult", "advice", "adventure", "admission",
+    "advance", "adopt", "admit", "adobe", "add", "addition", "adapt",
+    "adjacent", "adjuster", "adequate", "admire", "advocate"
+}
+
 def match_ad_roots(token: str) -> int:
     if not token:
         return 0
     if token in ("ad", "ads"):
         return 1
+    # Match ad* or ads* prefixes (e.g. admaxium, adscore, adnext, adspsp, aditude)
+    if token.startswith(("ad", "ads")) and len(token) > 2:
+        if token not in BENIGN_AD_WORDS and not any(token.startswith(b) for b in BENIGN_AD_WORDS):
+            return 1
     for r in AD_ROOTS:
         if r in token:
-            # avoid false positives like blade, shadow, badminton, bread
-            if r == "ad" and token in ("blade", "shadow", "badminton", "head", "road", "bread", "read", "lead"):
-                continue
             return 1
     return 0
 
@@ -243,6 +250,22 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
         print(f"    ✓ Loaded {len(known_ads_set):,} ground-truth ad/tracker domains.")
     except Exception as e:
         print(f"    [!] StevenBlack reference download notice: {e}")
+
+    # Also include EasyList Privacy (EasyPrivacy)
+    print(f"[*] Downloading tracker reference list (EasyPrivacy)...")
+    try:
+        ep_url = "https://easylist.to/easylist/easyprivacy.txt"
+        req = urllib.request.Request(ep_url, headers={"User-Agent": "BlockAds-AI-Trainer/1.0"})
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            for line in resp.read().decode("utf-8", errors="ignore").splitlines():
+                line = line.strip()
+                if line.startswith("||") and "^" in line:
+                    d = line[2:line.index("^")].strip().lower()
+                    if "." in d and "/" not in d and "*" not in d:
+                        known_ads_set.add(d)
+        print(f"    ✓ Total ground-truth ad & tracker domains (StevenBlack + EasyPrivacy): {len(known_ads_set):,}")
+    except Exception as e:
+        print(f"    [!] EasyPrivacy download notice: {e}")
 
     # Add DB ads to master known ads set if DB is available
     if not db_url and not os.environ.get("DATABASE_URL") and os.path.exists(".env"):
