@@ -70,11 +70,7 @@ async function main() {
         );
         console.log(`✓ Successfully rebuilt '${filter.name}'`);
       } catch (err: any) {
-        console.error(`✗ Failed for ${filter.url}: ${err.message}. Removing from database.`);
-        try {
-          await deleteFilter(filter.name);
-        } catch (r2Err) {}
-        await deleteFilterByUrl(filter.url).catch(() => {});
+        console.error(`✗ Failed for ${filter.url}: ${err.message}. (Skipping to next filter without deleting)`);
       }
     }
     console.log(`\n[${new Date().toISOString()}] ✓ Local rebuild of all filters complete!`);
