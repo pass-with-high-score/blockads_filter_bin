@@ -55,14 +55,32 @@ async function main() {
   const payloadB64 = zlib.gzipSync(Buffer.from(JSON.stringify(batchData))).toString("base64");
   console.log(`[2/3] Prepared payload (${(payloadB64.length / 1024).toFixed(1)} KB) for ${batchData.length} filters.`);
 
-  console.log(`[3/3] Launching Google Colab cloud runner (concurrency: 600, timeout: 2.0s)...`);
-  const colabCmd = spawn(
-    "/Users/nqmgaming/.local/bin/colab",
-    ["run", "scripts/colab_clean_filter.py", "--batch-b64", payloadB64, "--concurrency", "600", "--timeout", "2.0"],
-    { stdio: "inherit" }
-  );
+  // Detect environment: If running directly inside Colab / server, run python3 directly.
+  // Otherwise, if local and colab CLI exists, offload to Colab VM.
+  const isInsideColab = fs.existsSync("/content") || Boolean(process.env.COLAB_RELEASE_TAG);
+  let cmd = "python3";
+  let cmdArgs = [
+    "scripts/colab_clean_filter.py",
+    "--batch-b64",
+    payloadB64,
+    "--concurrency",
+    "600",
+    "--timeout",
+    "2.0",
+  ];
 
-  colabCmd.on("close", (code) => {
+  const localColabCli = "/Users/nqmgaming/.local/bin/colab";
+  if (!isInsideColab && fs.existsSync(localColabCli)) {
+    console.log(`[3/3] Launching Google Colab cloud runner via CLI (concurrency: 600, timeout: 2.0s)...`);
+    cmd = localColabCli;
+    cmdArgs = ["run", ...cmdArgs];
+  } else {
+    console.log(`[3/3] Running dead domain pruner natively with python3 (concurrency: 600, timeout: 2.0s)...`);
+  }
+
+  const child = spawn(cmd, cmdArgs, { stdio: "inherit" });
+
+  child.on("close", (code) => {
     process.exit(code || 0);
   });
 }
