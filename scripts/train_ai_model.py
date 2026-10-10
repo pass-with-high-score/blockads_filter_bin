@@ -53,7 +53,9 @@ BENIGN_SUB_PREFIXES = {
 AD_ROOTS = [
     "adservice", "adserver", "pagead", "doubleclick", "syndicat", "telemetry",
     "adnxs", "pixel", "pxl", "track", "trck", "analytic", "metric", "banner",
-    "popunder", "popup", "affiliat", "adzerk", "outbrain", "taboola", "criteo"
+    "popunder", "popup", "affiliat", "adzerk", "outbrain", "taboola", "criteo",
+    "adjust", "appsflyer", "kochava", "singular", "clevertap", "mixpanel",
+    "hotjar", "amplitude", "scorecardresearch", "moatads"
 ]
 
 SUSPICIOUS_TLDS = {
