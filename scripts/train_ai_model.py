@@ -273,6 +273,16 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
             print(f"    [!] Failed to fetch Tranco: {tranco_err}")
 
     ad_domains = []
+    if not db_url and not os.environ.get("DATABASE_URL") and os.path.exists(".env"):
+        try:
+            with open(".env", "r", encoding="utf-8") as env_f:
+                for line in env_f:
+                    if line.strip().startswith("DATABASE_URL="):
+                        os.environ["DATABASE_URL"] = line.strip().split("=", 1)[1].strip("\"'")
+                        break
+        except Exception:
+            pass
+
     if db_url or os.environ.get("DATABASE_URL"):
         target_db = db_url or os.environ.get("DATABASE_URL")
         ad_domains = fetch_ads_from_database(target_db, max_samples)
