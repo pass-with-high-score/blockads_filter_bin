@@ -58,3 +58,4 @@ rebuild.log
 !.dev.vars.example
 wrangler.toml
 !wrangler.example.jsonc
+models/

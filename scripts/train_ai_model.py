@@ -37,14 +37,23 @@ except ImportError:
     from sklearn.metrics import classification_report, accuracy_score, confusion_matrix
     from sklearn.model_selection import train_test_split
 
-KEYWORDS = [
-    "ad", "ads", "track", "pixel", "analytic", "stat", "banner",
-    "telemetry", "metric", "click", "pop", "affiliate", "promo",
-    "beacon", "syndication", "log", "counter", "audit"
-]
+BENIGN_SUB_PREFIXES = {
+    "www", "mail", "api", "support", "portal", "docs", "cdn", "static",
+    "auth", "login", "pay", "help", "app", "dev", "cloud", "s3", "media",
+    "img", "assets", "download", "upload", "news", "blog", "forum", "shop",
+    "store", "m", "en", "vi", "my", "web", "direct", "secure", "account"
+}
+
+AD_TOKENS = {
+    "ad", "ads", "adservice", "adserver", "doubleclick", "track", "tracker",
+    "tracking", "pixel", "analytic", "analytics", "telemetry", "banner",
+    "pop", "syndication", "beacon", "affiliate", "stat", "stats", "metrics",
+    "counter", "audit", "adzerk", "outbrain", "taboola", "criteo"
+}
 
 SUSPICIOUS_TLDS = {
-    ".xyz", ".top", ".tk", ".cf", ".gq", ".click", ".buzz", ".work", ".site", ".online"
+    ".xyz", ".top", ".click", ".link", ".loan", ".buzz", ".work",
+    ".gq", ".cf", ".ga", ".ml", ".tk", ".men", ".stream", ".date"
 }
 
 def shannon_entropy(s: str) -> float:
@@ -67,59 +76,76 @@ def max_consecutive_consonants(s: str) -> int:
             cur_run = 0
     return max_run
 
-def extract_features(domain: str) -> list[float]:
-    """Extract fast lexical features from domain string."""
+def split_domain_parts(domain: str) -> tuple[list[str], str, str]:
     domain = domain.lower().strip()
     if domain.startswith("www."):
         domain = domain[4:]
+    parts = domain.split(".")
+    if len(parts) >= 3 and parts[-2] in ("com", "edu", "gov", "org", "net", "co", "ac"):
+        # e.g. vietcombank.com.vn or bbc.co.uk
+        sld = parts[-3] if len(parts) >= 3 else parts[0]
+        subdomains = parts[:-3]
+        tld = ".".join(parts[-2:])
+    else:
+        sld = parts[-2] if len(parts) >= 2 else parts[0]
+        subdomains = parts[:-2] if len(parts) >= 2 else []
+        tld = parts[-1] if len(parts) >= 1 else ""
+    return subdomains, sld, tld
+
+def extract_features(domain: str) -> list[float]:
+    """Extract fast, hierarchy-aware lexical and structural features from domain."""
+    domain = domain.lower().strip()
+    if domain.startswith("www."):
+        domain = domain[4:]
+    
+    subdomains, sld, tld = split_domain_parts(domain)
     
     length = len(domain)
     dots = domain.count(".")
     hyphens = domain.count("-")
     digits = sum(c.isdigit() for c in domain)
-    vowels = sum(c in "aeiou" for c in domain)
-    consonants = sum(c.isalpha() and c not in "aeiou" for c in domain)
-    
     digit_ratio = digits / max(1, length)
-    vowel_ratio = vowels / max(1, length)
-    consonant_ratio = consonants / max(1, length)
     entropy = shannon_entropy(domain)
     max_cons = max_consecutive_consonants(domain)
     
-    subdomain_count = max(0, dots - 1)
+    tokens = [t for t in re.split(r"[-._0-9]+", domain) if t]
+    sub_tokens = [t for sub in subdomains for t in re.split(r"[-._0-9]+", sub) if t]
+    sld_tokens = [t for t in re.split(r"[-._0-9]+", sld) if t]
     
-    # Check if keyword is part of domain labels
-    keyword_matches = 0
-    labels = domain.split(".")
-    for kw in KEYWORDS:
-        for lbl in labels:
-            if kw in lbl:
-                keyword_matches += 1
-                break
+    ad_token_hits = sum(1 for t in tokens if t in AD_TOKENS)
+    sub_ad_hits = sum(1 for t in sub_tokens if t in AD_TOKENS)
+    sub_benign_hits = sum(1 for s in subdomains if s in BENIGN_SUB_PREFIXES or any(t in BENIGN_SUB_PREFIXES for t in re.split(r"[-._0-9]+", s)))
+    is_sld_ad = 1.0 if any(t in AD_TOKENS for t in sld_tokens) else 0.0
     
-    main_name_len = len(labels[-2]) if len(labels) >= 2 else length
-    is_suspicious_tld = 1.0 if any(domain.endswith(tld) for tld in SUSPICIOUS_TLDS) else 0.0
+    sub_len = sum(len(s) for s in subdomains)
+    sub_len_ratio = sub_len / max(1, length)
+    is_suspicious_tld = 1.0 if any(domain.endswith(t) for t in SUSPICIOUS_TLDS) else 0.0
+    vowels = sum(c in "aeiou" for c in domain)
+    vowel_ratio = vowels / max(1, length)
 
     return [
         float(length),
         float(dots),
         float(hyphens),
-        float(digits),
         float(digit_ratio),
-        float(vowel_ratio),
-        float(consonant_ratio),
         float(entropy),
         float(max_cons),
-        float(subdomain_count),
-        float(keyword_matches),
-        float(main_name_len),
-        is_suspicious_tld
+        float(ad_token_hits),
+        float(sub_ad_hits),
+        float(sub_benign_hits),
+        is_sld_ad,
+        float(len(sld)),
+        float(len(subdomains)),
+        float(sub_len_ratio),
+        is_suspicious_tld,
+        float(vowel_ratio)
     ]
 
 FEATURE_NAMES = [
-    "length", "dots", "hyphens", "digits", "digit_ratio",
-    "vowel_ratio", "consonant_ratio", "entropy", "max_consecutive_consonants",
-    "subdomain_count", "keyword_matches", "main_name_len", "suspicious_tld"
+    "length", "dots", "hyphens", "digit_ratio", "entropy",
+    "max_consecutive_consonants", "ad_token_hits", "subdomain_ad_hits",
+    "subdomain_benign_hits", "is_sld_ad_brand", "sld_length",
+    "subdomain_count", "subdomain_length_ratio", "is_suspicious_tld", "vowel_ratio"
 ]
 
 def fetch_ads_from_database(db_url: str, max_samples: int = 25000) -> list[str]:
@@ -208,8 +234,27 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
                                 break
                 random.seed(42)
                 random.shuffle(raw_benign)
-                benign_domains = raw_benign[:max_samples]
-        print(f"    ✓ Loaded {len(benign_domains):,} real benign domains from Tranco.")
+
+                # Benign Subdomain Augmentation:
+                # Tranco list contains only apex domains. We augment 50% with realistic benign subdomains
+                # so the classifier learns that having subdomains like support.*, portal.*, cdn.* is NOT an ad!
+                sub_prefixes = list(BENIGN_SUB_PREFIXES)
+                augmented_benign = [
+                    "vietcombank.com.vn", "portal.vietcombank.com.vn", "techcombank.com.vn",
+                    "support.apple.com", "cdn.jsdelivr.net", "s3.amazonaws.com", "docs.github.com",
+                    "vnexpress.net", "dantri.com.vn", "shopee.vn", "api.shopee.vn", "zalo.me"
+                ]
+                for idx, d in enumerate(raw_benign):
+                    if idx % 2 == 0:
+                        augmented_benign.append(d)
+                    else:
+                        prefix = sub_prefixes[idx % len(sub_prefixes)]
+                        augmented_benign.append(f"{prefix}.{d}")
+                    if len(augmented_benign) >= max_samples:
+                        break
+
+                benign_domains = augmented_benign[:max_samples]
+        print(f"    ✓ Loaded {len(benign_domains):,} diverse benign domains (including augmented subdomains).")
     except Exception as e:
         print(f"    [!] Failed to fetch Tranco: {e}")
 
@@ -309,13 +354,19 @@ def main():
         "dantri.com.vn",
         "github.com",
         "netflix.com",
+        "support.apple.com",
+        "portal.vietcombank.com.vn",
+        "cdn.jsdelivr.net",
+        "s3.amazon.com",
+        "docs.github.com",
         "adservice.google.com",
         "pagead2.googlesyndication.com",
         "trck.pxl-telemetry.xyz",
         "delivery.adnxs.com",
         "tracking-analytics-metric.biz",
         "ads.twitter.com",
-        "analytics.tiktok.com"
+        "analytics.tiktok.com",
+        "pixel.facebook.com"
     ]
     print("=" * 60)
     print("               LIVE INFERENCE PREDICTION TESTS              ")
@@ -332,7 +383,8 @@ def main():
         "accuracy": round(acc, 4),
         "trained_samples": len(domains),
         "feature_names": FEATURE_NAMES,
-        "keywords": KEYWORDS,
+        "ad_tokens": sorted(list(AD_TOKENS)),
+        "benign_sub_prefixes": sorted(list(BENIGN_SUB_PREFIXES)),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime()),
     }
     info_path = os.path.join(args.output_dir, "model_meta.json")
@@ -344,7 +396,21 @@ def main():
     joblib.dump(clf, joblib_path)
     print(f"\n[✓] Model saved to {joblib_path} (Size: {os.path.getsize(joblib_path)/1024:.1f} KB)")
     print(f"[✓] Metadata saved to {info_path}")
-    print(f"Total training pipeline completed in {time.time() - t0:.2f}s")
+
+    # Automatic ONNX export
+    try:
+        from skl2onnx import convert_sklearn
+        from skl2onnx.common.data_types import FloatTensorType
+        initial_type = [("float_input", FloatTensorType([None, len(FEATURE_NAMES)]))]
+        onx = convert_sklearn(clf, initial_types=initial_type)
+        onnx_path = os.path.join(args.output_dir, "adblock_model.onnx")
+        with open(onnx_path, "wb") as f:
+            f.write(onx.SerializeToString())
+        print(f"[✓] ONNX model successfully exported: {onnx_path} ({os.path.getsize(onnx_path)/1024:.1f} KB)")
+    except Exception as onnx_err:
+        print(f"[!] Note on ONNX export: {onnx_err}")
+
+    print(f"\nTotal training pipeline completed in {time.time() - t0:.2f}s")
 
 if __name__ == "__main__":
     main()

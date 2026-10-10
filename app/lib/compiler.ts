@@ -185,9 +185,6 @@ export async function downloadAndParseDomains(url: string) {
     clearTimeout(id);
   }
 }
-    clearTimeout(id);
-  }
-}
 
 // ────────────────────────────────────────────────────────────────────────────
 // Trie Implementation & Serialization
