@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BlockAds AI On-Device Domain Classifier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(22, 29, 49, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #f3f4f6;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --danger: #ef4444;
+      --danger-bg: rgba(239, 68, 68, 0.12);
+      --danger-border: rgba(239, 68, 68, 0.4);
+      --success: #10b981;
+      --success-bg: rgba(16, 185, 129, 0.12);
+      --success-border: rgba(16, 185, 129, 0.4);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: radial-gradient(circle at 50% 0%, #1e1e38 0%, var(--bg) 75%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 64px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 860px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .badge-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(59, 130, 246, 0.12);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #60a5fa;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+      background: linear-gradient(135deg, #ffffff 40%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 15px;
+      line-height: 1.5;
+      max-width: 620px;
+      margin: 0 auto;
+    }
+
+    .main-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      margin-bottom: 24px;
+    }
+
+    .input-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .domain-input-wrapper {
+      display: flex;
+      gap: 12px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      padding: 14px 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 16px;
+      color: #ffffff;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+    }
+
+    button.btn-primary {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 12px;
+      font-weight: 600;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    button.btn-primary:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .slider-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 16px;
+      padding: 14px 16px;
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .slider-info {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .slider-info strong {
+      color: var(--text);
+    }
+
+    input[type="range"] {
+      flex: 1;
+      max-width: 260px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    .examples-wrapper {
+      margin-top: 20px;
+    }
+
+    .example-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #cbd5e1;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .chip:hover {
+      background: rgba(59, 130, 246, 0.15);
+      border-color: rgba(59, 130, 246, 0.4);
+      color: #ffffff;
+      transform: translateY(-1px);
+    }
+
+    .chip.threat { border-left: 3px solid var(--danger); }
+    .chip.safe { border-left: 3px solid var(--success); }
+
+    /* Result Card */
+    #result-card {
+      display: none;
+      border-radius: 16px;
+      padding: 24px;
+      margin-top: 24px;
+      animation: fadeIn 0.25s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .result-blocked {
+      background: var(--danger-bg);
+      border: 2px solid var(--danger-border);
+    }
+
+    .result-passed {
+      background: var(--success-bg);
+      border: 2px solid var(--success-border);
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .result-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+    }
+
+    .result-blocked .result-title { color: var(--danger); }
+    .result-passed .result-title { color: var(--success); }
+
+    .result-latency {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .score-display {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .score-big {
+      font-size: 38px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .result-blocked .score-big { color: var(--danger); }
+    .result-passed .score-big { color: var(--success); }
+
+    .score-threshold-note {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .progress-bar-bg {
+      height: 10px;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      transition: width 0.4s ease;
+    }
+
+    .result-blocked .progress-bar-fill { background: linear-gradient(90deg, #f97316, #ef4444); }
+    .result-passed .progress-bar-fill { background: linear-gradient(90deg, #10b981, #059669); }
+
+    .result-desc {
+      font-size: 14px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+
+    /* Features Grid */
+    .features-card {
+      margin-top: 24px;
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: 12px;
+      padding: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .features-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+    }
+
+    .feature-item {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .feature-name {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .feature-val {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 40px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    footer a {
+      color: #60a5fa;
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      text-decoration: underline;
+    }
+
+    #loading-pill {
+      display: none;
+      color: #93c5fd;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge-bar">
+        <span>⚡</span> Powered by ONNX Runtime WebAssembly (In-Browser Client Inference)
+      </div>
+      <h1>BlockAds AI Domain Classifier</h1>
+      <p class="subtitle">
+        High-performance on-device classifier designed for mobile DNS VPNs. Evaluates domain topology, lexical entropy, and ad roots in under 0.5ms.
+      </p>
+    </header>
+
+    <div class="main-card">
+      <div class="input-group">
+        <label for="domain-input">Target Domain Name</label>
+        <div class="domain-input-wrapper">
+          <input type="text" id="domain-input" placeholder="e.g. app.adjust.com or vietcombank.com.vn" value="app.adjust.com" autofocus>
+          <button class="btn-primary" id="analyze-btn" onclick="runInference()">
+            <span>⚡ Analyze</span>
+          </button>
+        </div>
+        <div id="loading-pill">Initializing WebAssembly ONNX Engine...</div>
+      </div>
+
+      <div class="slider-row">
+        <div class="slider-info">
+          Decision Threshold: <strong id="thresh-label">75.0%</strong>
+          <span style="font-size: 12px; color: #64748b; margin-left: 6px;">(Default: 75% for 0% False Positives)</span>
+        </div>
+        <input type="range" id="thresh-slider" min="50" max="95" step="5" value="75" oninput="updateThreshold(this.value)">
+      </div>
+
+      <div class="examples-wrapper">
+        <label>Quick Test Examples</label>
+        <div class="example-chips">
+          <button class="chip threat" onclick="setDomain('app.adjust.com')">⛔ app.adjust.com</button>
+          <button class="chip threat" onclick="setDomain('s2s.adjust.com')">⛔ s2s.adjust.com</button>
+          <button class="chip threat" onclick="setDomain('eu1.clevertap-prod.com')">⛔ clevertap-prod.com</button>
+          <button class="chip threat" onclick="setDomain('adservice.google.com')">⛔ adservice.google.com</button>
+          <button class="chip threat" onclick="setDomain('1epc8o1tg9zz.com')">⛔ 1epc8o1tg9zz.com (DGA)</button>
+          <button class="chip safe" onclick="setDomain('vietcombank.com.vn')">✅ vietcombank.com.vn</button>
+          <button class="chip safe" onclick="setDomain('techcombank.com.vn')">✅ techcombank.com.vn</button>
+          <button class="chip safe" onclick="setDomain('vnexpress.net')">✅ vnexpress.net</button>
+          <button class="chip safe" onclick="setDomain('stackoverflow.com')">✅ stackoverflow.com</button>
+          <button class="chip safe" onclick="setDomain('github.com')">✅ github.com</button>
+        </div>
+      </div>
+
+      <!-- Result Card -->
+      <div id="result-card">
+        <div class="result-header">
+          <div class="result-title" id="res-title">Threat Detected</div>
+          <div class="result-latency" id="res-latency">0.18 ms</div>
+        </div>
+        <div class="score-display">
+          <div class="score-big" id="res-score">100.0%</div>
+          <div class="score-threshold-note" id="res-note">vs 75% threshold</div>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="res-fill" style="width: 100%;"></div>
+        </div>
+        <div class="result-desc" id="res-desc">
+          Classified as an advertisement or tracker endpoint.
+        </div>
+
+        <div class="features-card">
+          <div class="features-title">Extracted Topological & Lexical Features (16 Attributes)</div>
+          <div class="features-grid" id="features-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Model Weights on <a href="https://huggingface.co/nqmgaming/blockads-onnx" target="_blank">Hugging Face Model Hub</a> •
+      Source on <a href="https://github.com/pass-with-high-score/blockads_filter_bin" target="_blank">GitHub</a> •
+      BlockAds AI Architecture V4
+    </footer>
+  </div>
+
+  <script>
+    // ─────────────────────────────────────────────────────────
+    // Constants & Vocabularies
+    // ─────────────────────────────────────────────────────────
+    const BENIGN_SUB_PREFIXES = new Set([
+      "www", "mail", "api", "support", "portal", "docs", "cdn", "static",
+      "auth", "login", "pay", "help", "app", "dev", "cloud", "s3", "media",
+      "img", "assets", "download", "upload", "news", "blog", "forum", "shop",
+      "store", "m", "en", "vi", "my", "web", "direct", "secure", "account"
+    ]);
+
+    const AD_ROOTS = [
+      "adservice", "adserver", "pagead", "doubleclick", "syndicat", "telemetry",
+      "adnxs", "pixel", "pxl", "track", "trck", "analytic", "metric", "banner",
+      "popunder", "popup", "affiliat", "adzerk", "outbrain", "taboola", "criteo",
+      "adjust", "appsflyer", "kochava", "singular", "clevertap", "mixpanel",
+      "hotjar", "amplitude", "scorecardresearch", "moatads"
+    ];
+
+    const BENIGN_AD_WORDS = new Set([
+      "admin", "address", "adult", "advice", "adventure", "admission",
+      "advance", "adopt", "admit", "adobe", "add", "addition", "adapt",
+      "adjacent", "adjuster", "adequate", "admire", "advocate"
+    ]);
+
+    const SUSPICIOUS_TLDS = new Set([
+      ".xyz", ".top", ".click", ".link", ".loan", ".buzz", ".work",
+      ".gq", ".cf", ".ga", ".ml", ".tk", ".men", ".stream", ".date"
+    ]);
+
+    let onnxSession = null;
+    let currentThreshold = 0.75;
+
+    function shannonEntropy(str) {
+      if (!str) return 0.0;
+      const counts = {};
+      for (const c of str) counts[c] = (counts[c] || 0) + 1;
+      const len = str.length;
+      let ent = 0;
+      for (const k in counts) {
+        const p = counts[k] / len;
+        ent -= p * Math.log2(p);
+      }
+      return ent;
+    }
+
+    function splitDomain(domain) {
+      domain = domain.toLowerCase().trim();
+      if (domain.startsWith("www.")) domain = domain.slice(4);
+      const parts = domain.split(".");
+      let sld = "", subdomains = [], tld = "";
+      if (parts.length >= 3 && ["com", "edu", "gov", "org", "net", "co", "ac"].includes(parts[parts.length - 2])) {
+        sld = parts.length >= 3 ? parts[parts.length - 3] : parts[0];
+        subdomains = parts.slice(0, -3);
+        tld = parts.slice(-2).join(".");
+      } else {
+        sld = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+        subdomains = parts.length >= 2 ? parts.slice(0, -2) : [];
+        tld = parts.length >= 1 ? parts[parts.length - 1] : "";
+      }
+      return { subdomains, sld, tld };
+    }
+
+    function matchAdRoots(token) {
+      if (!token) return 0;
+      if (token === "ad" || token === "ads") return 1;
+      if (token.startsWith("ad") || token.startsWith("ads")) {
+        if (token.length > 2 && !BENIGN_AD_WORDS.has(token)) {
+          let hasBenignPrefix = false;
+          for (const b of BENIGN_AD_WORDS) {
+            if (token.startsWith(b)) { hasBenignPrefix = true; break; }
+          }
+          if (!hasBenignPrefix) return 1;
+        }
+      }
+      for (const r of AD_ROOTS) {
+        if (token.includes(r)) return 1;
+      }
+      return 0;
+    }
+
+    function extractFeatures(rawDomain) {
+      let domain = rawDomain.toLowerCase().trim();
+      domain = domain.replace(/^https?:\/\//, "").split("/")[0].split(":")[0];
+      if (domain.startsWith("www.")) domain = domain.slice(4);
+
+      const { subdomains, sld, tld } = splitDomain(domain);
+      const length = domain.length;
+      const hyphens = (domain.match(/-/g) || []).length;
+      const digits = (domain.match(/\d/g) || []).length;
+      const digitRatio = digits / Math.max(1, length);
+      const entropy = shannonEntropy(domain);
+
+      const tokens = domain.split(/[-._0-9]+/).filter(Boolean);
+      const subTokens = subdomains.flatMap(s => s.split(/[-._0-9]+/).filter(Boolean));
+      const sldTokens = sld.split(/[-._0-9]+/).filter(Boolean);
+
+      let adHits = 0, subAdHits = 0, sldAdHits = 0;
+      for (const t of tokens) adHits += matchAdRoots(t);
+      for (const t of subTokens) subAdHits += matchAdRoots(t);
+      for (const t of sldTokens) sldAdHits += matchAdRoots(t);
+
+      const hasSubAd = subAdHits > 0 ? 1.0 : 0.0;
+      const hasSldAd = sldAdHits > 0 ? 1.0 : 0.0;
+      const hasAdToken = adHits > 0 ? 1.0 : 0.0;
+
+      let subBenignHits = 0;
+      for (const s of subdomains) {
+        if (BENIGN_SUB_PREFIXES.has(s)) subBenignHits++;
+        else {
+          for (const t of s.split(/[-._0-9]+/)) {
+            if (BENIGN_SUB_PREFIXES.has(t)) { subBenignHits++; break; }
+          }
+        }
+      }
+
+      const isSafeService = subBenignHits > 0 ? 1.0 : 0.0;
+      const adIntentDelta = Number(adHits - subBenignHits);
+
+      let isSuspiciousTld = 0.0;
+      for (const st of SUSPICIOUS_TLDS) {
+        if (domain.endsWith(st)) { isSuspiciousTld = 1.0; break; }
+      }
+
+      const vowels = (domain.match(/[aeiou]/g) || []).length;
+      const vowelRatio = vowels / Math.max(1, length);
+
+      const vector = [
+        Number(length), Number(hyphens), Number(digitRatio), Number(entropy),
+        hasAdToken, hasSubAd, hasSldAd, Number(adHits), Number(subAdHits),
+        Number(sldAdHits), Number(subBenignHits), isSafeService, adIntentDelta,
+        Number(sld.length), isSuspiciousTld, Number(vowelRatio)
+      ];
+
+      return {
+        domain, sld, subdomains: subdomains.join(".") || "(none)", tld,
+        vector, length, hyphens, digits, digitRatio, entropy,
+        adHits, subBenignHits, isSuspiciousTld, vowelRatio
+      };
+    }
+
+    async function initSession() {
+      if (onnxSession) return onnxSession;
+      const pill = document.getElementById("loading-pill");
+      pill.style.display = "block";
+      try {
+        ort.env.wasm.numThreads = 1;
+        onnxSession = await ort.InferenceSession.create("./adblock_model.onnx");
+        pill.style.display = "none";
+        return onnxSession;
+      } catch (err) {
+        pill.innerHTML = `⚠️ Failed to load ONNX: ${err.message}`;
+        pill.style.color = "#f87171";
+        throw err;
+      }
+    }
+
+    async function runInference() {
+      const inputEl = document.getElementById("domain-input");
+      const domainVal = inputEl.value.trim();
+      if (!domainVal) return;
+
+      const session = await initSession();
+      const info = extractFeatures(domainVal);
+
+      const t0 = performance.now();
+      const inputTensor = new ort.Tensor("float32", Float32Array.from(info.vector), [1, 16]);
+      const results = await session.run({ [session.inputNames[0]]: inputTensor });
+      const elapsed = (performance.now() - t0).toFixed(2);
+
+      let probAd = 0.0;
+      const probOutput = results[session.outputNames[1]] || results.output_probability;
+      if (probOutput) {
+        if (Array.isArray(probOutput)) {
+          const map = probOutput[0];
+          probAd = map instanceof Map ? (map.get(1n) ?? map.get(1) ?? 0) : (map[1] ?? map["1"] ?? 0);
+        } else if (probOutput.data) {
+          const first = probOutput.data[0];
+          if (first instanceof Map) probAd = first.get(1n) ?? first.get(1) ?? 0;
+          else if (typeof first === "object") probAd = first[1] ?? first["1"] ?? 0;
+          else if (typeof first === "number") probAd = first;
+        }
+      }
+
+      if (probAd === 0.0 && results[session.outputNames[0]]) {
+        const label = Number(results[session.outputNames[0]].data[0]);
+        probAd = label === 1 ? 0.95 : 0.05;
+      }
+
+      displayResult(info, probAd, elapsed);
+    }
+
+    function displayResult(info, prob, elapsed) {
+      const card = document.getElementById("result-card");
+      const isBlocked = prob >= currentThreshold;
+      const pct = (prob * 100).toFixed(1);
+
+      card.className = isBlocked ? "result-blocked" : "result-passed";
+      card.style.display = "block";
+
+      document.getElementById("res-title").textContent = isBlocked ? "⛔ THREAT DETECTED: AD / TRACKER" : "✅ SAFE: LEGITIMATE SERVICE";
+      document.getElementById("res-latency").textContent = `${elapsed} ms (Client Wasm)`;
+      document.getElementById("res-score").textContent = `${pct}%`;
+      document.getElementById("res-note").textContent = `vs ${Math.round(currentThreshold * 100)}% threshold`;
+      document.getElementById("res-fill").style.width = `${Math.min(100, Math.max(0, prob * 100))}%`;
+
+      document.getElementById("res-desc").innerHTML = isBlocked
+        ? `Domain <code>${info.domain}</code> exceeds the threshold. Identified as advertisement telemetry or tracker.`
+        : `Domain <code>${info.domain}</code> is clean and safe to resolve for users.`;
+
+      const grid = document.getElementById("features-grid");
+      grid.innerHTML = `
+        <div class="feature-item"><div class="feature-name">Domain Length</div><div class="feature-val">${info.length} chars</div></div>
+        <div class="feature-item"><div class="feature-name">Shannon Entropy</div><div class="feature-val">${info.entropy.toFixed(3)}</div></div>
+        <div class="feature-item"><div class="feature-name">Ad Keyword Hits</div><div class="feature-val">${info.adHits}</div></div>
+        <div class="feature-item"><div class="feature-name">Safe Service Subdomains</div><div class="feature-val">${info.subBenignHits}</div></div>
+        <div class="feature-item"><div class="feature-name">Digit Ratio</div><div class="feature-val">${(info.digitRatio * 100).toFixed(1)}%</div></div>
+        <div class="feature-item"><div class="feature-name">Vowel Ratio</div><div class="feature-val">${(info.vowelRatio * 100).toFixed(1)}%</div></div>
+        <div class="feature-item"><div class="feature-name">SLD Token</div><div class="feature-val">${info.sld}</div></div>
+        <div class="feature-item"><div class="feature-name">Suspicious TLD</div><div class="feature-val">${info.isSuspiciousTld ? "Yes" : "No"}</div></div>
+      `;
+    }
+
+    function updateThreshold(val) {
+      currentThreshold = Number(val) / 100;
+      document.getElementById("thresh-label").textContent = `${Number(val).toFixed(1)}%`;
+      const card = document.getElementById("result-card");
+      if (card.style.display === "block") runInference();
+    }
+
+    function setDomain(d) {
+      document.getElementById("domain-input").value = d;
+      runInference();
+    }
+
+    document.getElementById("domain-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") runInference();
+    });
+
+    window.addEventListener("DOMContentLoaded", () => {
+      runInference();
+    });
+  </script>
+</body>
+</html>

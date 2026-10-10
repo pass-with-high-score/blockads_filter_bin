@@ -61,5 +61,6 @@ wrangler.toml
 models/*.onnx
 models/*.joblib
 models/cache/
+hf_space/*.onnx
 __pycache__/
 *.pyc
