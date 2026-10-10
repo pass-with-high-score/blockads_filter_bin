@@ -200,6 +200,12 @@ def fetch_stevenblack_domains(max_count=10000) -> list[str]:
     return domains
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Evaluate BlockAds ONNX Model Coverage")
+    parser.add_argument("--threshold", type=float, default=0.75, help="Decision threshold for blocking (default: 0.75)")
+    args = parser.parse_args()
+    threshold = args.threshold
+
     onnx_path = "models/adblock_model.onnx"
     if not os.path.exists(onnx_path):
         print(f"[!] Model not found at {onnx_path}")
@@ -212,7 +218,8 @@ def main():
     print(f"[*] Initializing ONNX Runtime Mobile Engine ({onnx_path})...")
     sess = ort.InferenceSession(onnx_path)
     input_name = sess.get_inputs()[0].name
-    print(f"    ✓ ONNX Engine loaded successfully (Size: {os.path.getsize(onnx_path)/1024:.1f} KB)\n")
+    print(f"    ✓ ONNX Engine loaded successfully (Size: {os.path.getsize(onnx_path)/1024:.1f} KB)")
+    print(f"    ✓ Active Decision Threshold: {threshold*100:.1f}%\n")
 
     # 1. Fetch test datasets
     ep_domains = fetch_easyprivacy_domains(max_count=10000)
@@ -240,17 +247,17 @@ def main():
     t0 = time.time()
     probs_ep = predict_batch(sess, input_name, ep_domains)
     t_ep = time.time() - t0
-    blocked_ep = sum(1 for p in probs_ep if p >= 0.5)
+    blocked_ep = sum(1 for p in probs_ep if p >= threshold)
     rate_ep = (blocked_ep / max(1, len(ep_domains))) * 100
     avg_score_ep = np.mean(probs_ep) * 100
-    print(f"Total EasyPrivacy Domains Tested:        {len(ep_domains):,}")
-    print(f"⛔ BLOCKED as Ad/Tracker (Score >= 50%): {blocked_ep:,} / {len(ep_domains):,} ({rate_ep:.2f}%)")
-    print(f"Average Ad Risk Score:                   {avg_score_ep:.1f}%")
-    print(f"Inference Time:                          {t_ep:.2f}s ({len(ep_domains)/max(0.01, t_ep):.0f} domains/s)")
+    print(f"Total EasyPrivacy Domains Tested:               {len(ep_domains):,}")
+    print(f"⛔ BLOCKED as Ad/Tracker (Score >= {threshold*100:.0f}%):        {blocked_ep:,} / {len(ep_domains):,} ({rate_ep:.2f}%)")
+    print(f"Average Ad Risk Score:                          {avg_score_ep:.1f}%")
+    print(f"Inference Time:                                 {t_ep:.2f}s ({len(ep_domains)/max(0.01, t_ep):.0f} domains/s)")
 
     print("\nSample EasyPrivacy classifications:")
     for d, p in list(zip(ep_domains, probs_ep))[:10]:
-        decision = "⛔ BLOCK" if p >= 0.5 else "✅ PASS"
+        decision = "⛔ BLOCK" if p >= threshold else "✅ PASS"
         print(f"  {d:<42} ➔ {decision:<10} (Score: {p*100:5.1f}%)")
 
     print("\n" + "═" * 70)
@@ -259,39 +266,40 @@ def main():
     t0 = time.time()
     probs_sb = predict_batch(sess, input_name, sb_domains)
     t_sb = time.time() - t0
-    blocked_sb = sum(1 for p in probs_sb if p >= 0.5)
+    blocked_sb = sum(1 for p in probs_sb if p >= threshold)
     rate_sb = (blocked_sb / max(1, len(sb_domains))) * 100
     avg_score_sb = np.mean(probs_sb) * 100
-    print(f"Total StevenBlack Domains Tested:        {len(sb_domains):,}")
-    print(f"⛔ BLOCKED as Ad/Tracker (Score >= 50%): {blocked_sb:,} / {len(sb_domains):,} ({rate_sb:.2f}%)")
-    print(f"Average Ad Risk Score:                   {avg_score_sb:.1f}%")
-    print(f"Inference Time:                          {t_sb:.2f}s ({len(sb_domains)/max(0.01, t_sb):.0f} domains/s)")
+    print(f"Total StevenBlack Domains Tested:               {len(sb_domains):,}")
+    print(f"⛔ BLOCKED as Ad/Tracker (Score >= {threshold*100:.0f}%):        {blocked_sb:,} / {len(sb_domains):,} ({rate_sb:.2f}%)")
+    print(f"Average Ad Risk Score:                          {avg_score_sb:.1f}%")
+    print(f"Inference Time:                                 {t_sb:.2f}s ({len(sb_domains)/max(0.01, t_sb):.0f} domains/s)")
 
     print("\nSample StevenBlack classifications:")
     for d, p in list(zip(sb_domains, probs_sb))[:10]:
-        decision = "⛔ BLOCK" if p >= 0.5 else "✅ PASS"
+        decision = "⛔ BLOCK" if p >= threshold else "✅ PASS"
         print(f"  {d:<42} ➔ {decision:<10} (Score: {p*100:5.1f}%)")
 
     print("\n" + "═" * 70)
     print("           BENCHMARK 3: SAFE SITES & BANKING (FALSE POSITIVE CHECK)  ")
     print("═" * 70)
     probs_safe = predict_batch(sess, input_name, safe_baseline)
-    passed_safe = sum(1 for p in probs_safe if p < 0.5)
+    passed_safe = sum(1 for p in probs_safe if p < threshold)
     rate_safe = (passed_safe / len(safe_baseline)) * 100
     avg_score_safe = np.mean(probs_safe) * 100
-    print(f"Total Legitimate Domains Tested:         {len(safe_baseline):,}")
-    print(f"✅ ALLOWED / PASSED (Score < 50%):       {passed_safe:,} / {len(safe_baseline):,} ({rate_safe:.2f}%)")
-    print(f"False Positives (Bị chặn nhầm):          {len(safe_baseline) - passed_safe:,} ({(100 - rate_safe):.2f}%)")
-    print(f"Average Ad Risk Score:                   {avg_score_safe:.1f}%")
+    print(f"Total Legitimate Domains Tested:                {len(safe_baseline):,}")
+    print(f"✅ ALLOWED / PASSED (Score < {threshold*100:.0f}%):              {passed_safe:,} / {len(safe_baseline):,} ({rate_safe:.2f}%)")
+    print(f"False Positives (Bị chặn nhầm):                 {len(safe_baseline) - passed_safe:,} ({(100 - rate_safe):.2f}%)")
+    print(f"Average Ad Risk Score:                          {avg_score_safe:.1f}%")
 
     print("\nSample Safe site classifications:")
     for d, p in list(zip(safe_baseline, probs_safe))[:10]:
-        decision = "⛔ BLOCK" if p >= 0.5 else "✅ PASS"
+        decision = "⛔ BLOCK" if p >= threshold else "✅ PASS"
         print(f"  {d:<42} ➔ {decision:<10} (Score: {p*100:5.1f}%)")
 
     print("\n" + "═" * 70)
     print("                           FINAL VERDICT                             ")
     print("═" * 70)
+    print(f"• Decision Threshold:               {threshold*100:.1f}%")
     print(f"• EasyPrivacy Trackers Block Rate:  {rate_ep:.2f}%")
     print(f"• StevenBlack Ads Block Rate:       {rate_sb:.2f}%")
     print(f"• Safe Sites Accuracy:              {rate_safe:.2f}% (Bảo toàn trang web sạch)")
