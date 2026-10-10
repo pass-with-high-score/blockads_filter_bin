@@ -174,6 +174,7 @@ def main():
     parser.add_argument("--timeout", type=float, default=2.0, help="DNS lookup timeout per domain in seconds (default: 2.0)")
     parser.add_argument("--output", help="Optional path to save cleaned domains")
     parser.add_argument("--output-json", help="Optional path to write JSON summary of results")
+    parser.add_argument("--output-dir", help="Directory to save all cleaned filter files in batch mode")
     args = parser.parse_args()
 
     batch_items = None
@@ -229,11 +230,24 @@ def main():
                 total_dead += len(dead)
                 pct_dead = (len(dead) / tot * 100) if tot > 0 else 0
 
+                clean_file_path = ""
+                if args.output_dir:
+                    os.makedirs(args.output_dir, exist_ok=True)
+                    clean_file_path = os.path.join(args.output_dir, f"{name}.txt")
+                    with open(clean_file_path, "w", encoding="utf-8") as out:
+                        for d in alive:
+                            out.write(f"||{d}^\n")
+                        for c in css:
+                            out.write(f"{c}\n")
+                        for s in scriptlets:
+                            out.write(f"{s}\n")
+
                 print(f"  ✅ Filter '{name}' complete: {tot:,} checked | {len(alive):,} Alive | {len(dead):,} Pruned ({pct_dead:.1f}%)", flush=True)
 
                 batch_results.append({
                     "name": name,
                     "url": url,
+                    "cleaned_file": clean_file_path,
                     "total_domains": tot,
                     "alive_domains": len(alive),
                     "dead_domains": len(dead),
@@ -260,6 +274,12 @@ def main():
         print(f"Total batch time:            {t_batch_elapsed:.2f}s ({total_checked/max(0.001, t_batch_elapsed):.0f} domains/s)", flush=True)
         print(f"Average memory saving:       ~{(total_dead/max(1, total_checked))*100:.1f}% reduction in Trie/Bloom size", flush=True)
         print("=" * 65 + "\n", flush=True)
+
+        if args.output_dir:
+            summary_path = os.path.join(args.output_dir, "batch_summary.json")
+            with open(summary_path, "w", encoding="utf-8") as f:
+                json.dump(batch_results, f, indent=2)
+            print(f"[✓] Saved batch summary and cleaned files to {args.output_dir}", flush=True)
 
         if args.output_json:
             with open(args.output_json, "w", encoding="utf-8") as f:

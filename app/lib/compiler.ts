@@ -111,6 +111,63 @@ export function parseDomainLine(line: string): string {
   return domain;
 }
 
+export function parseFilterText(text: string) {
+  const contentHash = crypto.createHash("sha256").update(text).digest("hex");
+  const lines = text.split(/\r?\n/);
+  
+  const seenDomains = new Set<string>();
+  const seenCSS = new Set<string>();
+  const seenScriptlets = new Set<string>();
+  
+  const domains: string[] = [];
+  const cssRules: string[] = [];
+  const scriptlets: string[] = [];
+  
+  for (const line of lines) {
+    const rawLine = line.trim();
+    if (rawLine === "") continue;
+    
+    // 1. Skip comments and empty lines
+    if (rawLine === "" || rawLine.startsWith("!") || (rawLine.startsWith("#") && !rawLine.startsWith("##"))) {
+      continue;
+    }
+    
+    // 2. Extract Scriptlet Rules
+    if (rawLine.includes("##+js(") || rawLine.includes("#%#//scriptlet(")) {
+      if (!seenScriptlets.has(rawLine)) {
+        seenScriptlets.add(rawLine);
+        scriptlets.push(rawLine);
+      }
+      continue;
+    }
+    
+    // 3. Extract Generic Cosmetic CSS Rules (strip leading ## to produce valid selectors)
+    if (
+      rawLine.startsWith("##") &&
+      !rawLine.includes("##+js") &&
+      !rawLine.includes("##^")
+    ) {
+      const selector = rawLine.slice(2).trim();
+      if (selector && !seenCSS.has(selector)) {
+        seenCSS.add(selector);
+        cssRules.push(selector);
+      }
+      continue;
+    }
+    
+    const domain = parseDomainLine(rawLine);
+    if (domain) {
+      if (!seenDomains.has(domain)) {
+        seenDomains.add(domain);
+        domains.push(domain);
+      }
+    }
+  }
+  
+  scriptlets.sort();
+  return { domains, cssRules, scriptlets, contentHash };
+}
+
 export async function downloadAndParseDomains(url: string) {
   // Use a longer timeout just like Go's 90s timeout
   const controller = new AbortController();
@@ -123,61 +180,11 @@ export async function downloadAndParseDomains(url: string) {
     }
     
     const text = await response.text();
-    const contentHash = crypto.createHash("sha256").update(text).digest("hex");
-    const lines = text.split(/\r?\n/);
-    
-    const seenDomains = new Set<string>();
-    const seenCSS = new Set<string>();
-    const seenScriptlets = new Set<string>();
-    
-    const domains: string[] = [];
-    const cssRules: string[] = [];
-    const scriptlets: string[] = [];
-    
-    for (const line of lines) {
-      const rawLine = line.trim();
-      if (rawLine === "") continue;
-      
-      // 1. Skip comments and empty lines
-      if (rawLine === "" || rawLine.startsWith("!") || (rawLine.startsWith("#") && !rawLine.startsWith("##"))) {
-        continue;
-      }
-      
-      // 2. Extract Scriptlet Rules
-      if (rawLine.includes("##+js(") || rawLine.includes("#%#//scriptlet(")) {
-        if (!seenScriptlets.has(rawLine)) {
-          seenScriptlets.add(rawLine);
-          scriptlets.push(rawLine);
-        }
-        continue;
-      }
-      
-      // 3. Extract Generic Cosmetic CSS Rules (strip leading ## to produce valid selectors)
-      if (
-        rawLine.startsWith("##") &&
-        !rawLine.includes("##+js") &&
-        !rawLine.includes("##^")
-      ) {
-        const selector = rawLine.slice(2).trim();
-        if (selector && !seenCSS.has(selector)) {
-          seenCSS.add(selector);
-          cssRules.push(selector);
-        }
-        continue;
-      }
-      
-      const domain = parseDomainLine(rawLine);
-      if (domain) {
-        if (!seenDomains.has(domain)) {
-          seenDomains.add(domain);
-          domains.push(domain);
-        }
-      }
-    }
-    
-    scriptlets.sort();
-    return { domains, cssRules, scriptlets, contentHash };
+    return parseFilterText(text);
   } finally {
+    clearTimeout(id);
+  }
+}
     clearTimeout(id);
   }
 }
@@ -470,6 +477,77 @@ export async function compileFilterList(
 
   const zipData = await zip.generateAsync({ type: "nodebuffer" });
   console.log(`[${name}] ✅ Compilation complete: ${domains.length} rules, ${zipData.length} bytes zip package`);
+
+  return {
+    zipData,
+    ruleCount: domains.length,
+    fileSize: zipData.length,
+    contentHash,
+    skipped: false,
+  };
+}
+
+export async function compileFilterFromText(
+  name: string,
+  url: string,
+  text: string
+): Promise<CompileResult> {
+  const startTime = Date.now();
+  console.log(`[${name}] ▶ Starting compilation from cleaned content...`);
+
+  const { domains, cssRules, scriptlets, contentHash } = parseFilterText(text);
+
+  console.log(`[${name}] ✓ Cleaned filter contains: ${domains.length} live domains, ${cssRules.length} CSS rules, ${scriptlets.length} scriptlets in ${((Date.now() - startTime) / 1000).toFixed(2)}s`);
+
+  if (domains.length === 0 && cssRules.length === 0 && scriptlets.length === 0) {
+    throw new Error("No domains, CSS rules, or scriptlets found in cleaned filter text");
+  }
+
+  let trieBytes: Buffer | null = null;
+  if (domains.length > 0) {
+    const root = new TrieNode();
+    for (const domain of domains) {
+      root.insert(domain);
+    }
+    trieBytes = serializeTrieToBytes(root);
+  }
+
+  let bloomBytes: Buffer | null = null;
+  if (domains.length > 0) {
+    const bf = new BloomFilter(domains.length);
+    for (const domain of domains) {
+      bf.add(domain);
+    }
+    bloomBytes = bf.serializeToBytes();
+  }
+
+  let cssBytes: Buffer | null = null;
+  if (cssRules.length > 0) {
+    cssBytes = Buffer.from(cssRules.join('\n') + '\n', 'utf-8');
+  }
+
+  let scriptletBytes: Buffer | null = null;
+  if (scriptlets.length > 0) {
+    scriptletBytes = Buffer.from(scriptlets.join('\n') + '\n', 'utf-8');
+  }
+
+  const info = {
+    name,
+    url,
+    ruleCount: domains.length,
+    updatedAt: new Date().toISOString(),
+  };
+  const infoBytes = Buffer.from(JSON.stringify(info, null, 2), 'utf-8');
+
+  const zip = new JSZip();
+  if (trieBytes) zip.file(`${name}.trie`, trieBytes);
+  if (bloomBytes) zip.file(`${name}.bloom`, bloomBytes);
+  if (cssBytes) zip.file(`${name}.css`, cssBytes);
+  if (scriptletBytes) zip.file(`${name}.scriptlets`, scriptletBytes);
+  zip.file("info.json", infoBytes);
+
+  const zipData = await zip.generateAsync({ type: "nodebuffer" });
+  console.log(`[${name}] ✅ Cleaned compilation complete: ${domains.length} rules, ${zipData.length} bytes zip package`);
 
   return {
     zipData,
