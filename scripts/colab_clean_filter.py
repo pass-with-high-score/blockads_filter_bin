@@ -64,50 +64,73 @@ def parse_domain_line(line: str) -> str:
         return domain
     return ""
 
+# High-performance DNS resolution engine with 300 concurrent workers
+DNS_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=300)
+GLOBAL_DNS_CACHE: dict[str, bool] = {}
+
+def sync_resolve_domain(domain: str) -> bool:
+    try:
+        socket.gethostbyname(domain)
+        return True
+    except Exception:
+        return False
+
 async def check_domain_liveness(
     domain: str,
     semaphore: asyncio.Semaphore,
     loop: asyncio.AbstractEventLoop,
-    timeout_sec: float = 2.0
-) -> tuple[str, bool]:
+    timeout_sec: float = 1.5
+) -> tuple[str, bool, bool]:
+    # 1. Global in-memory cache hit (0ms instant return across multiple filters)
+    if domain in GLOBAL_DNS_CACHE:
+        return domain, GLOBAL_DNS_CACHE[domain], True
+
     async with semaphore:
         try:
-            # 2.0s fast timeout prevents zombie domains from blocking the queue
-            coro = loop.getaddrinfo(domain, None, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM)
-            await asyncio.wait_for(coro, timeout=timeout_sec)
-            return domain, True
-        except (socket.gaierror, socket.herror, TimeoutError, asyncio.TimeoutError):
-            return domain, False
+            is_alive = await asyncio.wait_for(
+                loop.run_in_executor(DNS_EXECUTOR, sync_resolve_domain, domain),
+                timeout=timeout_sec
+            )
+            GLOBAL_DNS_CACHE[domain] = is_alive
+            return domain, is_alive, False
         except Exception:
-            return domain, False
+            GLOBAL_DNS_CACHE[domain] = False
+            return domain, False, False
 
 async def filter_live_domains(
     domains: list[str],
-    concurrency: int = 600,
+    concurrency: int = 300,
     label: str = "",
-    timeout_sec: float = 2.0
+    timeout_sec: float = 1.5
 ) -> tuple[list[str], list[str]]:
     loop = asyncio.get_running_loop()
-    semaphore = asyncio.Semaphore(concurrency)
+    semaphore = asyncio.Semaphore(max(100, min(concurrency, 500)))
     tasks = [check_domain_liveness(d, semaphore, loop, timeout_sec) for d in domains]
     
     alive = []
     dead = []
     total = len(tasks)
+    cache_hits = 0
     
     prefix = f"[{label}] " if label else "[*] "
-    print(f"{prefix}Checking DNS liveness for {total:,} domains (concurrency: {concurrency}, timeout: {timeout_sec}s)...", flush=True)
+    cached_count = sum(1 for d in domains if d in GLOBAL_DNS_CACHE)
+    print(
+        f"{prefix}Turbo DNS scan for {total:,} domains (pool: 300 workers, cache: {cached_count:,} hits, timeout: {timeout_sec}s)...",
+        flush=True
+    )
     
     completed = 0
     t0 = time.time()
-    step_interval = max(50, total // 20)  # log every ~5% or at least every 50 domains
+    step_interval = max(100, total // 15)
     
     for fut in asyncio.as_completed(tasks):
-        d, is_alive = await fut
+        d, is_alive, from_cache = await fut
         if is_alive:
             alive.append(d)
         else:
             dead.append(d)
+        if from_cache:
+            cache_hits += 1
         completed += 1
         
         if completed % step_interval == 0 or completed == total:
@@ -115,7 +138,7 @@ async def filter_live_domains(
             rate = completed / max(0.001, elapsed)
             percent = (completed / total) * 100
             print(
-                f"    ↳ Progress: {completed:,}/{total:,} ({percent:.1f}%) — {rate:.0f} checks/sec | Alive: {len(alive):,} | Pruned: {len(dead):,}",
+                f"    ↳ Progress: {completed:,}/{total:,} ({percent:.1f}%) — {rate:.0f} checks/sec | Cache: {cache_hits:,} | Alive: {len(alive):,} | Dead: {len(dead):,}",
                 flush=True
             )
 
@@ -123,9 +146,9 @@ async def filter_live_domains(
 
 def run_async_pipeline(
     domains: list[str],
-    concurrency: int,
+    concurrency: int = 300,
     label: str = "",
-    timeout_sec: float = 2.0
+    timeout_sec: float = 1.5
 ) -> tuple[list[str], list[str]]:
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(asyncio.run, filter_live_domains(domains, concurrency, label, timeout_sec))

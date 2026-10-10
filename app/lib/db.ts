@@ -17,13 +17,18 @@ function getConnectionString(): string {
   return "postgres://dummy_user:dummy_password@localhost:5432/dummy_db";
 }
 
+let cachedSql: any = null;
+
 function getSql() {
-  const connStr = getConnectionString();
-  return postgres(connStr, {
-    max: 1,
-    idle_timeout: 15,
-    connect_timeout: 10,
-  });
+  if (!cachedSql) {
+    const connStr = getConnectionString();
+    cachedSql = postgres(connStr, {
+      max: 20,
+      idle_timeout: 20,
+      connect_timeout: 15,
+    });
+  }
+  return cachedSql;
 }
 
 export const sql = new Proxy((() => {}) as unknown as ReturnType<typeof postgres>, {

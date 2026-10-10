@@ -7,9 +7,10 @@ import path from "path";
 
 async function main() {
   const args = process.argv.slice(2);
-  let limit = 10; // Default to 10 filters for quick inspection unless specified
+  let limit = 10;
   let all = false;
   let search = "";
+  let concurrency = 8; // Default 8 parallel workers
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--limit" && args[i + 1]) {
@@ -24,8 +25,18 @@ async function main() {
       i++;
     } else if (args[i].startsWith("--search=")) {
       search = args[i].split("=")[1].toLowerCase();
+    } else if ((args[i] === "--concurrency" || args[i] === "-c") && args[i + 1]) {
+      concurrency = parseInt(args[i + 1], 10);
+      i++;
+    } else if (args[i].startsWith("--concurrency=")) {
+      concurrency = parseInt(args[i].split("=")[1], 10);
     }
   }
+
+  if (process.env.CONCURRENCY) {
+    concurrency = parseInt(process.env.CONCURRENCY, 10) || concurrency;
+  }
+  concurrency = Math.max(1, Math.min(concurrency, 32));
 
   console.log(`[1/4] Fetching filters from PostgreSQL database...`);
   let filters = await getAllFilters();
@@ -62,8 +73,6 @@ async function main() {
   const payloadB64 = zlib.gzipSync(Buffer.from(JSON.stringify(batchData))).toString("base64");
   console.log(`[2/4] Prepared payload (${(payloadB64.length / 1024).toFixed(1)} KB) for ${batchData.length} filters.`);
 
-  // Detect environment: If running directly inside Colab / server, run python3 directly.
-  // Otherwise, if local and colab CLI exists, offload to Colab VM.
   const isInsideColab = fs.existsSync("/content") || Boolean(process.env.COLAB_RELEASE_TAG);
   let cmd = "python3";
   let cmdArgs = [
@@ -71,20 +80,20 @@ async function main() {
     "--batch-b64",
     payloadB64,
     "--concurrency",
-    "600",
+    "300",
     "--timeout",
-    "2.0",
+    "1.5",
     "--output-dir",
     cleanedOutputDir,
   ];
 
   const localColabCli = "/Users/nqmgaming/.local/bin/colab";
   if (!isInsideColab && fs.existsSync(localColabCli)) {
-    console.log(`[3/4] Launching Google Colab cloud runner via CLI (concurrency: 600, timeout: 2.0s)...`);
+    console.log(`[3/4] Launching Google Colab cloud runner via CLI (pool: 300 workers, timeout: 1.5s)...`);
     cmd = localColabCli;
     cmdArgs = ["run", ...cmdArgs];
   } else {
-    console.log(`[3/4] Running dead domain pruner natively with python3 (concurrency: 600, timeout: 2.0s)...`);
+    console.log(`[3/4] Running dead domain pruner with turbo DNS pool (300 workers, timeout: 1.5s)...`);
   }
 
   const child = spawn(cmd, cmdArgs, { stdio: "inherit" });
@@ -103,35 +112,55 @@ async function main() {
 
     try {
       const summary: any[] = JSON.parse(fs.readFileSync(summaryPath, "utf-8"));
-      console.log(`\n[4/4] 🚀 Compiling cleaned filters and uploading to Cloudflare R2...`);
+      console.log(`\n[4/4] 🚀 Compiling cleaned filters and uploading to Cloudflare R2 (Turbo Concurrency: ${concurrency} workers)...`);
 
-      for (let i = 0; i < summary.length; i++) {
-        const item = summary[i];
-        if (item.error || !item.cleaned_file || !fs.existsSync(item.cleaned_file)) {
-          console.warn(`  ⚠️ Skipped '${item.name}': ${item.error || "no cleaned file"}`);
-          continue;
+      let queueIdx = 0;
+      let completed = 0;
+      const total = summary.length;
+      const t0_upload = Date.now();
+
+      async function uploadWorker(workerId: number) {
+        while (queueIdx < total) {
+          const current = queueIdx++;
+          const item = summary[current];
+
+          if (item.error || !item.cleaned_file || !fs.existsSync(item.cleaned_file)) {
+            console.warn(`  [W${workerId}] ⚠️ Skipped '${item.name}': ${item.error || "no cleaned file"}`);
+            completed++;
+            continue;
+          }
+
+          try {
+            const cleanedText = fs.readFileSync(item.cleaned_file, "utf-8");
+            const result = await compileFilterFromText(item.name, item.url, cleanedText);
+
+            let downloadUrl = await uploadFilter(item.name, result.zipData);
+            downloadUrl = `${downloadUrl}?v=${Math.floor(Date.now() / 1000)}`;
+
+            await upsertFilter(
+              item.name,
+              item.url,
+              downloadUrl,
+              result.ruleCount,
+              result.fileSize,
+              result.contentHash
+            );
+
+            completed++;
+            const elapsed = (Date.now() - t0_upload) / 1000;
+            const rate = completed / Math.max(0.1, elapsed);
+            console.log(
+              `  [W${workerId}] ✓ [${completed}/${total}] '${item.name}' ➔ ${result.ruleCount.toLocaleString()} live rules (${(result.fileSize / 1024).toFixed(1)} KB) | ${rate.toFixed(1)} fil/s`
+            );
+          } catch (err: any) {
+            completed++;
+            console.error(`  [W${workerId}] ✗ Failed '${item.name}': ${err.message}`);
+          }
         }
-
-        console.log(`\n▶ [${i + 1}/${summary.length}] Building cleaned package for '${item.name}'...`);
-        const cleanedText = fs.readFileSync(item.cleaned_file, "utf-8");
-        const result = await compileFilterFromText(item.name, item.url, cleanedText);
-
-        let downloadUrl = await uploadFilter(item.name, result.zipData);
-        downloadUrl = `${downloadUrl}?v=${Math.floor(Date.now() / 1000)}`;
-
-        await upsertFilter(
-          item.name,
-          item.url,
-          downloadUrl,
-          result.ruleCount,
-          result.fileSize,
-          result.contentHash
-        );
-
-        console.log(
-          `  ✓ Uploaded to R2: ${downloadUrl} (${result.ruleCount.toLocaleString()} live rules, ${(result.fileSize / 1024).toFixed(1)} KB)`
-        );
       }
+
+      const workers = Array.from({ length: concurrency }, (_, i) => uploadWorker(i + 1));
+      await Promise.all(workers);
 
       console.log(`\n✨ All ${summary.length} cleaned filters have been built, uploaded to R2, and recorded in Database!`);
     } catch (err: any) {
