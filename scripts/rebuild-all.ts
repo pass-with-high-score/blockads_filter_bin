@@ -11,10 +11,19 @@ async function main() {
     if (args[i] === "--limit" && args[i + 1]) {
       limit = parseInt(args[i + 1], 10);
       i++;
+    } else if (args[i].startsWith("--limit=")) {
+      limit = parseInt(args[i].split("=")[1], 10);
     } else if (args[i] === "--search" && args[i + 1]) {
       search = args[i + 1].toLowerCase();
       i++;
+    } else if (args[i].startsWith("--search=")) {
+      search = args[i].split("=")[1].toLowerCase();
     }
+  }
+
+  // Fallback to env var if CLI arg not passed
+  if (limit <= 0 && process.env.REBUILD_LIMIT) {
+    limit = parseInt(process.env.REBUILD_LIMIT, 10) || 0;
   }
 
   console.log(`[${new Date().toISOString()}] Starting rebuild of filters...`);
