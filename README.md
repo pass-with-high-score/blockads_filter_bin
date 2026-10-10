@@ -2,6 +2,8 @@
 
 The central backend compiler and distribution engine for the **[BlockAds](https://github.com/pass-with-high-score/blockads-android)** ecosystem.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pass-with-high-score/blockads_filter_bin/blob/main/notebooks/clean_filters.ipynb)
+
 BlockAds uses a custom, memory-mapped binary filtering engine (`.trie`, `.bloom`, `.css`, and `.scriptlets`) built in Go. This repository provides both a serverless Next.js API (`complier.pwhs.app`) and native Go compilation tools to dynamically parse, optimize, compile, and distribute ad-blocking filter lists to mobile devices via Cloudflare R2 CDN.
 
 ---
