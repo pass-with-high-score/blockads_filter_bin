@@ -213,14 +213,16 @@ def fetch_ads_from_database(db_url: str, max_samples: int = 25000) -> list[str]:
     return ad_domains
 
 def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[list[str], list[str]]:
-    """Fetches high-reputation benign domains and ad/tracking domains with diverse sampling."""
+    """Fetches authentic ground-truth benign domains (Cisco Umbrella 1M) and ad/tracking domains from Database."""
     import random
-    print(f"[*] Downloading {max_samples:,} benign domains from Tranco Top 1M list...")
+    print(f"[*] Downloading authentic benign domains from Cisco Umbrella Top 1M (real global DNS traffic)...")
     benign_domains = []
+    
+    # 1. Try Cisco Umbrella Top 1M (contains authentic real-world subdomains)
     try:
-        tranco_url = "https://tranco-list.eu/top-1m.csv.zip"
-        req = urllib.request.Request(tranco_url, headers={"User-Agent": "BlockAds-AI-Trainer/1.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        cisco_url = "http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip"
+        req = urllib.request.Request(cisco_url, headers={"User-Agent": "BlockAds-AI-Trainer/1.0"})
+        with urllib.request.urlopen(req, timeout=45) as resp:
             z = zipfile.ZipFile(io.BytesIO(resp.read()))
             with z.open(z.namelist()[0]) as f:
                 raw_benign = []
@@ -228,35 +230,47 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
                     parts = line.decode("utf-8", errors="ignore").strip().split(",")
                     if len(parts) >= 2:
                         d = parts[1].strip().lower()
-                        if "." in d and len(d) > 3:
+                        if "." in d and len(d) > 3 and d not in ("localhost", "local", "broadcasthost"):
                             raw_benign.append(d)
                             if len(raw_benign) >= max_samples * 2:
                                 break
+                
+                # Add core Vietnamese services and portals to ensure zero false positives
+                vn_essential = [
+                    "vietcombank.com.vn", "portal.vietcombank.com.vn", "techcombank.com.vn",
+                    "vpbank.com.vn", "mbbank.com.vn", "vnexpress.net", "dantri.com.vn",
+                    "tuoitre.vn", "thanhnien.vn", "shopee.vn", "api.shopee.vn", "zalo.me",
+                    "chinhphu.vn", "mof.gov.vn", "baochinhphu.vn", "tikicdn.com"
+                ]
+                raw_benign.extend(vn_essential)
+                
                 random.seed(42)
                 random.shuffle(raw_benign)
-
-                # Benign Subdomain Augmentation:
-                # Tranco list contains only apex domains. We augment 50% with realistic benign subdomains
-                # so the classifier learns that having subdomains like support.*, portal.*, cdn.* is NOT an ad!
-                sub_prefixes = list(BENIGN_SUB_PREFIXES)
-                augmented_benign = [
-                    "vietcombank.com.vn", "portal.vietcombank.com.vn", "techcombank.com.vn",
-                    "support.apple.com", "cdn.jsdelivr.net", "s3.amazonaws.com", "docs.github.com",
-                    "vnexpress.net", "dantri.com.vn", "shopee.vn", "api.shopee.vn", "zalo.me"
-                ]
-                for idx, d in enumerate(raw_benign):
-                    if idx % 2 == 0:
-                        augmented_benign.append(d)
-                    else:
-                        prefix = sub_prefixes[idx % len(sub_prefixes)]
-                        augmented_benign.append(f"{prefix}.{d}")
-                    if len(augmented_benign) >= max_samples:
-                        break
-
-                benign_domains = augmented_benign[:max_samples]
-        print(f"    ✓ Loaded {len(benign_domains):,} diverse benign domains (including augmented subdomains).")
+                benign_domains = raw_benign[:max_samples]
+        print(f"    ✓ Loaded {len(benign_domains):,} real-world benign domains from Cisco Umbrella (with authentic subdomains).")
     except Exception as e:
-        print(f"    [!] Failed to fetch Tranco: {e}")
+        print(f"    [!] Cisco Umbrella fetch notice ({e}). Falling back to Tranco Top 1M...")
+        try:
+            tranco_url = "https://tranco-list.eu/top-1m.csv.zip"
+            req = urllib.request.Request(tranco_url, headers={"User-Agent": "BlockAds-AI-Trainer/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                z = zipfile.ZipFile(io.BytesIO(resp.read()))
+                with z.open(z.namelist()[0]) as f:
+                    raw_benign = []
+                    for line in f:
+                        parts = line.decode("utf-8", errors="ignore").strip().split(",")
+                        if len(parts) >= 2:
+                            d = parts[1].strip().lower()
+                            if "." in d and len(d) > 3:
+                                raw_benign.append(d)
+                                if len(raw_benign) >= max_samples * 2:
+                                    break
+                    random.seed(42)
+                    random.shuffle(raw_benign)
+                    benign_domains = raw_benign[:max_samples]
+            print(f"    ✓ Loaded {len(benign_domains):,} benign domains from Tranco Top 1M.")
+        except Exception as tranco_err:
+            print(f"    [!] Failed to fetch Tranco: {tranco_err}")
 
     ad_domains = []
     if db_url or os.environ.get("DATABASE_URL"):
