@@ -23,6 +23,7 @@ next-env.d.ts
 blockads-filtering
 bin/
 server
+tmp/
 
 # Environment
 .env
