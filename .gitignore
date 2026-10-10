@@ -58,6 +58,8 @@ rebuild.log
 !.dev.vars.example
 wrangler.toml
 !wrangler.example.jsonc
-models/
+models/*.onnx
+models/*.joblib
+models/cache/
 __pycache__/
 *.pyc
