@@ -1,0 +1,110 @@
+name: Release BlockAds AI Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag (e.g. v4.0.0-ai)'
+        required: true
+        default: 'v4.0.0-ai'
+      release_title:
+        description: 'Release Title'
+        required: true
+        default: 'BlockAds AI On-Device Model V4 (ONNX & Scikit-Learn)'
+  push:
+    tags:
+      - 'v*-ai*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish AI Model Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Hugging Face Hub & Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install huggingface_hub onnxruntime numpy
+
+      - name: Fetch Model Artifacts from Hugging Face Hub
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO_ID: ${{ vars.HF_REPO_ID || 'nqmgaming/blockads-onnx' }}
+        run: |
+          mkdir -p release_assets
+          python3 -c "
+          import os
+          from huggingface_hub import hf_hub_download
+          
+          repo_id = os.environ.get('HF_REPO_ID', 'nqmgaming/blockads-onnx')
+          token = os.environ.get('HF_TOKEN')
+          files = ['adblock_model.onnx', 'adblock_domain_classifier.joblib', 'model_meta.json', 'README.md']
+          
+          print(f'Fetching latest model files from Hugging Face ({repo_id})...')
+          for f in files:
+              local_f = hf_hub_download(repo_id=repo_id, filename=f, token=token, local_dir='release_assets')
+              print(f'  ✓ Downloaded {f} ({os.path.getsize(local_f)/1024:.1f} KB)')
+          "
+
+      - name: Package Release Archive
+        run: |
+          cd release_assets
+          zip -9 blockads-ai-model-bundle.zip adblock_model.onnx adblock_domain_classifier.joblib model_meta.json README.md
+          ls -lh
+
+      - name: Determine Tag and Title
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
+            echo "title=${{ github.event.inputs.release_title }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "title=BlockAds AI Model Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          draft: false
+          prerelease: false
+          files: |
+            release_assets/adblock_model.onnx
+            release_assets/adblock_domain_classifier.joblib
+            release_assets/model_meta.json
+            release_assets/blockads-ai-model-bundle.zip
+          body: |
+            ## 🛡️ BlockAds AI On-Device Model (${{ steps.meta.outputs.tag }})
+
+            High-performance, lightweight Machine Learning model for on-device domain ad and tracker classification.
+
+            ### 🚀 Specifications
+            - **Format:** ONNX (`adblock_model.onnx`) & Scikit-Learn (`adblock_domain_classifier.joblib`)
+            - **Model Size:** 905.6 KB (Mobile ready for iOS & Android)
+            - **Inference Speed:** > 44,000 domains/second (< 0.02ms / domain)
+            - **Recommended Decision Threshold:** `0.75` (75%)
+            - **Safe Sites False Positive Rate:** `0.00%` (Zero False Positives on banking/news)
+
+            ### 🔗 Hugging Face Hub
+            The model is also accessible and versioned on Hugging Face:
+            👉 **[https://huggingface.co/nqmgaming/blockads-onnx](https://huggingface.co/nqmgaming/blockads-onnx)**
+
+            ### 📦 Included Files
+            - `adblock_model.onnx`: Standalone ONNX runtime mobile model.
+            - `adblock_domain_classifier.joblib`: Scikit-Learn native serialized model.
+            - `model_meta.json`: Feature extraction definitions, topologies, and thresholds.
+            - `blockads-ai-model-bundle.zip`: Full bundle with documentation.
