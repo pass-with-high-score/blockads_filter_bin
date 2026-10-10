@@ -138,8 +138,11 @@ def predict_batch(sess, input_name, domains: list[str]) -> np.ndarray:
     for i in range(0, len(feats), chunk_size):
         chunk = feats[i:i+chunk_size]
         res = sess.run(None, {input_name: chunk})
-        prob_dicts = res[1]
-        chunk_probs = [p.get(1, 0.0) for p in prob_dicts]
+        prob_data = res[1]
+        if isinstance(prob_data, np.ndarray):
+            chunk_probs = [float(p[1]) for p in prob_data]
+        else:
+            chunk_probs = [p.get(1, 0.0) if hasattr(p, "get") else float(p[1]) for p in prob_data]
         probs.extend(chunk_probs)
     return np.array(probs)
 
