@@ -424,34 +424,53 @@ def generate_synthetic_threats(count: int = 5000) -> list[str]:
             name = name[:length]
         threats.append(f"{name}{random.choice(tlds)}")
         
-    # 2. Typosquatting / Combosquatting / Homograph
+    # 2. Typosquatting / Combosquatting / Homoglyph
     typo_map = {"o": "0", "l": "1", "i": "1", "e": "3", "a": "4"}
-    for _ in range(count // 2):
+    standard_tlds = [".com", ".net", ".org", ".io", ".co", ".vn", ".com.vn"]
+    all_target_tlds = list(SUSPICIOUS_TLDS) + standard_tlds
+    
+    # 2A. Deterministic / High-Volume Typosquatting on standard TLDs (.com, .net, etc.)
+    # Guarantees domains like payypal.com, gooogle.com, amazn.com are heavily represented in threats
+    pure_typos = []
+    for b in brands:
+        b_list = list(b)
+        # Duplicate letter mutations (e.g., payypal, gooogle)
+        for i in range(len(b_list)):
+            mut = b_list[:i] + [b_list[i]] + b_list[i:]
+            for ext in standard_tlds:
+                pure_typos.append(f"{''.join(mut)}{ext}")
+        # Drop letter mutations (e.g., amzon, paypl)
+        if len(b_list) > 4:
+            for i in range(1, len(b_list) - 1):
+                mut = b_list[:i] + b_list[i+1:]
+                for ext in standard_tlds:
+                    pure_typos.append(f"{''.join(mut)}{ext}")
+        # Swap adjacent letters
+        for i in range(len(b_list) - 1):
+            swapped = list(b_list)
+            swapped[i], swapped[i+1] = swapped[i+1], swapped[i]
+            for ext in standard_tlds:
+                pure_typos.append(f"{''.join(swapped)}{ext}")
+                
+    random.shuffle(pure_typos)
+    threats.extend(pure_typos[:count // 4])
+
+    # 2B. Randomized combosquatting, punycode, and free hosting
+    for _ in range(count // 4):
         b = random.choice(brands)
         w = random.choice(phish_words)
         style = random.choice(["combo", "typo", "punycode", "fhd"])
+        target_tld = random.choice(all_target_tlds)
         if style == "combo":
-            threats.append(f"{b}-{w}{random.choice(tlds)}")
+            threats.append(f"{b}-{w}{target_tld}")
         elif style == "typo":
-            # Real typosquatting: duplicate a letter (payypal, gooogle) or drop a letter (amzon) or leetspeak (paypa1)
             b_list = list(b)
-            typo_mode = random.choice(["dup", "drop", "leet"])
-            if typo_mode == "dup" and len(b_list) > 3:
-                idx = random.randint(1, len(b_list) - 1)
-                b_list.insert(idx, b_list[idx])
-                threats.append("".join(b_list) + f"{random.choice(tlds)}")
-            elif typo_mode == "drop" and len(b_list) > 4:
-                idx = random.randint(1, len(b_list) - 2)
-                b_list.pop(idx)
-                threats.append("".join(b_list) + f"{random.choice(tlds)}")
-            else:
-                for i, ch in enumerate(b_list):
-                    if ch in typo_map and random.random() < 0.6:
-                        b_list[i] = typo_map[ch]
-                        break
-                threats.append("".join(b_list) + f"-{w}{random.choice(tlds)}")
+            for i, ch in enumerate(b_list):
+                if ch in typo_map and random.random() < 0.6:
+                    b_list[i] = typo_map[ch]
+                    break
+            threats.append("".join(b_list) + f"-{w}{target_tld}")
         elif style == "punycode":
-            # Generate authentic punycode spoof (e.g. replacing 'a' or 'o' with cyrillic lookalike)
             try:
                 import idna
                 spoof_map = {"a": "а", "o": "о", "e": "е", "p": "р", "c": "с"}
@@ -464,11 +483,11 @@ def generate_synthetic_threats(count: int = 5000) -> list[str]:
                         break
                 if replaced:
                     puny = idna.encode("".join(b_spoofed)).decode("ascii")
-                    threats.append(f"{puny}{random.choice(tlds)}")
+                    threats.append(f"{puny}{target_tld}")
                 else:
-                    threats.append(f"xn--{b}-{w}{random.choice(tlds)}")
+                    threats.append(f"xn--{b}-{w}{target_tld}")
             except Exception:
-                threats.append(f"xn--{b}-{w}{random.choice(tlds)}")
+                threats.append(f"xn--{b}-{w}{target_tld}")
         else:
             fhd = random.choice(FREE_HOSTING_SUFFIXES)
             threats.append(f"{b}-{w}.{fhd}")
@@ -593,7 +612,11 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
                     if len(parts) >= 2:
                         d = parts[1].strip().lower()
                         tokens = [t for t in re.split(r"[-._0-9]+", d) if t]
-                        if "." in d and len(d) > 3 and d not in known_ads_and_threats and not any(match_ad_roots(t) for t in tokens):
+                        _, sld, _ = split_domain_parts(d)
+                        norm_d, is_spoof = decode_punycode_and_homoglyphs(d)
+                        _, norm_sld, _ = split_domain_parts(norm_d)
+                        is_typo = (check_typosquatting(sld) > 0.0 or check_typosquatting(norm_sld) > 0.0 or is_spoof > 0.0)
+                        if "." in d and len(d) > 3 and d not in known_ads_and_threats and not is_typo and not any(match_ad_roots(t) for t in tokens):
                             tranco_domains.append(d)
                             if len(tranco_domains) >= max_samples:
                                 break
@@ -615,7 +638,11 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
                     if len(parts) >= 2:
                         d = parts[1].strip().lower()
                         tokens = [t for t in re.split(r"[-._0-9]+", d) if t]
-                        if "." in d and len(d) > 3 and d not in known_ads_and_threats and not any(match_ad_roots(t) for t in tokens) and d not in ("localhost", "local"):
+                        _, sld, _ = split_domain_parts(d)
+                        norm_d, is_spoof = decode_punycode_and_homoglyphs(d)
+                        _, norm_sld, _ = split_domain_parts(norm_d)
+                        is_typo = (check_typosquatting(sld) > 0.0 or check_typosquatting(norm_sld) > 0.0 or is_spoof > 0.0)
+                        if "." in d and len(d) > 3 and d not in known_ads_and_threats and not is_typo and not any(match_ad_roots(t) for t in tokens) and d not in ("localhost", "local"):
                             cisco_domains.append(d)
                             if len(cisco_domains) >= max_samples * 2:
                                 break
@@ -643,16 +670,20 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
     benign_domains = benign_domains[:max_samples]
 
     # Prepare final Threat & Ad sample (Real Feeds + Synthetic DGA/Combos/Homoglyphs)
-    # Ensure strong representation of zero-day threats, homoglyphs, and DGA (up to 15% of threat sample)
+    # Ensure strong guaranteed representation of zero-day threats, homoglyphs, and typosquatting
     synth_count = max(10000, int(max_samples * 0.15))
     synthetic_threats = generate_synthetic_threats(synth_count)
-    raw_ads_threats = list(known_ads_and_threats) + synthetic_threats
+    # Dedup and mix guaranteed synthetic threats with threat feeds
+    raw_ads_threats = list(known_ads_and_threats)
     random.seed(42)
     random.shuffle(raw_ads_threats)
-    ad_threat_domains = raw_ads_threats[:max_samples]
+    remaining_needed = max_samples - len(synthetic_threats)
+    ad_threat_domains = synthetic_threats + raw_ads_threats[:remaining_needed]
+    random.shuffle(ad_threat_domains)
+    ad_threat_domains = ad_threat_domains[:max_samples]
 
     print(f"    ✓ Final balanced benign dataset: {len(benign_domains):,} domains (zero contamination).")
-    print(f"    ✓ Final balanced threat dataset: {len(ad_threat_domains):,} domains (Ads, Phishing, DGA, Malware, Homoglyphs).")
+    print(f"    ✓ Final balanced threat dataset: {len(ad_threat_domains):,} domains (Ads, Phishing, DGA, Malware, Homoglyphs, Typosquats).")
     return benign_domains, ad_threat_domains
 
 def main():
