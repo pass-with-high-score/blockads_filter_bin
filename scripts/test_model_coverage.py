@@ -33,7 +33,36 @@ AD_ROOTS = [
 
 SUSPICIOUS_TLDS = {
     ".xyz", ".top", ".click", ".link", ".loan", ".buzz", ".work",
-    ".gq", ".cf", ".ga", ".ml", ".tk", ".men", ".stream", ".date"
+    ".gq", ".cf", ".ga", ".ml", ".tk", ".men", ".stream", ".date",
+    ".zip", ".mov", ".cam", ".site", ".live", ".online", ".surf"
+}
+
+BRAND_NAMES = {
+    "google", "apple", "paypal", "microsoft", "facebook", "amazon",
+    "netflix", "instagram", "twitter", "telegram", "binance", "coinbase",
+    "vietcombank", "techcombank", "mbbank", "vpbank", "bidv", "agribank",
+    "shopee", "lazada", "tiki", "zalo", "metamask", "whatsapp"
+}
+
+PHISHING_KEYWORDS = {
+    "login", "verify", "account", "security", "signin", "auth", "update",
+    "banking", "wallet", "recover", "confirm", "support", "alert", "secure",
+    "billing", "invoice", "validate", "customer", "portal"
+}
+
+FREE_HOSTING_SUFFIXES = (
+    "pages.dev", "vercel.app", "netlify.app", "firebaseapp.com", "web.app",
+    "github.io", "gitlab.io", "glitch.me", "render.com", "railway.app"
+)
+
+DDNS_TUNNEL_PATTERNS = {
+    "ngrok", "ngrok-free.app", "trycloudflare.com", "loca.lt", "serveo.net",
+    "duckdns.org", "no-ip", "ddns.net", "hopto.org", "zapto.org", "dynu.net"
+}
+
+CRYPTO_KEYWORDS = {
+    "coinhive", "cryptoloot", "coinimp", "minr", "cryptominer", "crypto-loot",
+    "webminer", "monero", "minexmr", "nanopool", "stratum"
 }
 
 def shannon_entropy(s: str) -> float:
@@ -69,7 +98,6 @@ def match_ad_roots(token: str) -> int:
         return 0
     if token in ("ad", "ads"):
         return 1
-    # Match ad* or ads* prefixes (e.g. admaxium, adscore, adnext, adspsp, aditude)
     if token.startswith(("ad", "ads")) and len(token) > 2:
         if token not in BENIGN_AD_WORDS and not any(token.startswith(b) for b in BENIGN_AD_WORDS):
             return 1
@@ -111,6 +139,21 @@ def extract_features(domain: str) -> list[float]:
     vowels = sum(c in "aeiou" for c in domain)
     vowel_ratio = vowels / max(1, length)
     
+    has_brand_combo = 0.0
+    for b in BRAND_NAMES:
+        if b in domain and sld != b:
+            has_brand_combo = 1.0
+            break
+            
+    phish_hits = sum(1 for t in tokens if t in PHISHING_KEYWORDS)
+    sub_phish_hits = sum(1 for t in sub_tokens if t in PHISHING_KEYWORDS)
+    
+    is_idn_punycode = 1.0 if ("xn--" in domain) else 0.0
+    is_fhd = 1.0 if any(domain.endswith(h) for h in FREE_HOSTING_SUFFIXES) else 0.0
+    is_ddns_tunnel = 1.0 if any(p in domain for p in DDNS_TUNNEL_PATTERNS) else 0.0
+    has_crypto = 1.0 if any(c in domain for c in CRYPTO_KEYWORDS) else 0.0
+    sld_entropy = shannon_entropy(sld)
+    
     return [
         float(length),
         float(hyphens),
@@ -127,7 +170,15 @@ def extract_features(domain: str) -> list[float]:
         ad_intent_delta,
         float(len(sld)),
         is_suspicious_tld,
-        float(vowel_ratio)
+        float(vowel_ratio),
+        is_idn_punycode,
+        has_brand_combo,
+        float(phish_hits),
+        float(sub_phish_hits),
+        is_fhd,
+        is_ddns_tunnel,
+        has_crypto,
+        float(sld_entropy)
     ]
 
 def predict_batch(sess, input_name, domains: list[str]) -> np.ndarray:

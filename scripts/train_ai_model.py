@@ -60,7 +60,37 @@ AD_ROOTS = [
 
 SUSPICIOUS_TLDS = {
     ".xyz", ".top", ".click", ".link", ".loan", ".buzz", ".work",
-    ".gq", ".cf", ".ga", ".ml", ".tk", ".men", ".stream", ".date"
+    ".gq", ".cf", ".ga", ".ml", ".tk", ".men", ".stream", ".date",
+    ".zip", ".mov", ".cam", ".site", ".live", ".online", ".surf"
+}
+
+# Threat & Phishing Detection Targets
+BRAND_NAMES = {
+    "google", "apple", "paypal", "microsoft", "facebook", "amazon",
+    "netflix", "instagram", "twitter", "telegram", "binance", "coinbase",
+    "vietcombank", "techcombank", "mbbank", "vpbank", "bidv", "agribank",
+    "shopee", "lazada", "tiki", "zalo", "metamask", "whatsapp"
+}
+
+PHISHING_KEYWORDS = {
+    "login", "verify", "account", "security", "signin", "auth", "update",
+    "banking", "wallet", "recover", "confirm", "support", "alert", "secure",
+    "billing", "invoice", "validate", "customer", "portal"
+}
+
+FREE_HOSTING_SUFFIXES = (
+    "pages.dev", "vercel.app", "netlify.app", "firebaseapp.com", "web.app",
+    "github.io", "gitlab.io", "glitch.me", "render.com", "railway.app"
+)
+
+DDNS_TUNNEL_PATTERNS = {
+    "ngrok", "ngrok-free.app", "trycloudflare.com", "loca.lt", "serveo.net",
+    "duckdns.org", "no-ip", "ddns.net", "hopto.org", "zapto.org", "dynu.net"
+}
+
+CRYPTO_KEYWORDS = {
+    "coinhive", "cryptoloot", "coinimp", "minr", "cryptominer", "crypto-loot",
+    "webminer", "monero", "minexmr", "nanopool", "stratum"
 }
 
 def shannon_entropy(s: str) -> float:
@@ -107,7 +137,13 @@ def match_ad_roots(token: str) -> int:
     return 0
 
 def extract_features(domain: str) -> list[float]:
-    """Extracts 16 calibrated features with differential intent analysis."""
+    """
+    Extracts 24 calibrated features across 4 threat domains:
+    1. Lexical & Structure (Length, Hyphens, Digits, Entropy, Vowels)
+    2. Ad / Tracker Differential Intent
+    3. Phishing, Typosquatting & Combosquatting (Brands + Security Keywords)
+    4. Infrastructure Abuse (Free Hosting, DDNS/Tunnels, Cryptojacking, Punycode/IDN, DGA)
+    """
     domain = domain.lower().strip()
     if domain.startswith("www."):
         domain = domain[4:]
@@ -124,6 +160,7 @@ def extract_features(domain: str) -> list[float]:
     sub_tokens = [t for sub in subdomains for t in re.split(r"[-._0-9]+", sub) if t]
     sld_tokens = [t for t in re.split(r"[-._0-9]+", sld) if t]
     
+    # Ad & Tracker hits
     ad_hits = sum(match_ad_roots(t) for t in tokens)
     sub_ad_hits = sum(match_ad_roots(t) for t in sub_tokens)
     sld_ad_hits = sum(match_ad_roots(t) for t in sld_tokens)
@@ -140,11 +177,31 @@ def extract_features(domain: str) -> list[float]:
     vowels = sum(c in "aeiou" for c in domain)
     vowel_ratio = vowels / max(1, length)
     
+    # 3. Phishing / Typosquatting / Combosquatting Features
+    has_brand_combo = 0.0
+    for b in BRAND_NAMES:
+        if b in domain and sld != b:
+            has_brand_combo = 1.0
+            break
+            
+    phish_hits = sum(1 for t in tokens if t in PHISHING_KEYWORDS)
+    sub_phish_hits = sum(1 for t in sub_tokens if t in PHISHING_KEYWORDS)
+    has_phish_token = 1.0 if phish_hits > 0 else 0.0
+    
+    # 4. Infrastructure & Threat Evasion Features
+    is_idn_punycode = 1.0 if ("xn--" in domain) else 0.0
+    is_fhd = 1.0 if any(domain.endswith(h) for h in FREE_HOSTING_SUFFIXES) else 0.0
+    is_ddns_tunnel = 1.0 if any(p in domain for p in DDNS_TUNNEL_PATTERNS) else 0.0
+    has_crypto = 1.0 if any(c in domain for c in CRYPTO_KEYWORDS) else 0.0
+    sld_entropy = shannon_entropy(sld)
+    
     return [
+        # Lexical baseline (Features 0-3)
         float(length),
         float(hyphens),
         float(digit_ratio),
         float(entropy),
+        # Ad differential intent (Features 4-12)
         has_ad_token,
         has_sub_ad,
         has_sld_ad,
@@ -154,9 +211,20 @@ def extract_features(domain: str) -> list[float]:
         float(sub_benign_hits),
         is_safe_service,
         ad_intent_delta,
+        # Topology (Features 13-15)
         float(len(sld)),
         is_suspicious_tld,
-        float(vowel_ratio)
+        float(vowel_ratio),
+        # Security threats: Phishing & Homograph (Features 16-19)
+        is_idn_punycode,
+        has_brand_combo,
+        float(phish_hits),
+        float(sub_phish_hits),
+        # Security threats: Infrastructure & Malware/Mining (Features 20-23)
+        is_fhd,
+        is_ddns_tunnel,
+        has_crypto,
+        float(sld_entropy)
     ]
 
 FEATURE_NAMES = [
@@ -164,7 +232,9 @@ FEATURE_NAMES = [
     "has_ad_token", "has_sub_ad", "has_sld_ad",
     "ad_hits", "sub_ad_hits", "sld_ad_hits",
     "sub_benign_hits", "is_safe_service", "ad_intent_delta",
-    "sld_length", "is_suspicious_tld", "vowel_ratio"
+    "sld_length", "is_suspicious_tld", "vowel_ratio",
+    "is_idn_punycode", "has_brand_combo", "phish_hits", "sub_phish_hits",
+    "is_free_hosting", "is_ddns_tunnel", "has_crypto", "sld_entropy"
 ]
 
 def fetch_ads_from_database(db_url: str, max_samples: int = 25000) -> list[str]:
@@ -227,13 +297,60 @@ def fetch_ads_from_database(db_url: str, max_samples: int = 25000) -> list[str]:
         print(f"    [!] Database extraction fallback ({e})")
     return ad_domains
 
+def generate_synthetic_threats(count: int = 5000) -> list[str]:
+    """Generates synthetic DGA, Typosquatting, and Homograph samples to reinforce threat resilience."""
+    brands = list(BRAND_NAMES)
+    phish_words = list(PHISHING_KEYWORDS)
+    tlds = list(SUSPICIOUS_TLDS)
+    threats = []
+    
+    random.seed(42)
+    # 1. High-Entropy DGA domains
+    chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    consonants = "bcdfghjklmnpqrstvwxyz"
+    vowels = "aeiou"
+    for _ in range(count // 2):
+        t = random.choice(["random", "consonants", "hex"])
+        length = random.randint(12, 26)
+        if t == "random":
+            name = "".join(random.choice(chars) for _ in range(length))
+        elif t == "consonants":
+            name = "".join(random.choice(consonants) if random.random() < 0.8 else random.choice(vowels) for _ in range(length))
+        else:
+            name = "%0x" % random.getrandbits(length * 4)
+            name = name[:length]
+        threats.append(f"{name}{random.choice(tlds)}")
+        
+    # 2. Typosquatting / Combosquatting / Homograph
+    typo_map = {"o": "0", "l": "1", "i": "1", "e": "3", "a": "4"}
+    for _ in range(count // 2):
+        b = random.choice(brands)
+        w = random.choice(phish_words)
+        style = random.choice(["combo", "typo", "punycode", "fhd"])
+        if style == "combo":
+            threats.append(f"{b}-{w}{random.choice(tlds)}")
+        elif style == "typo":
+            b_list = list(b)
+            for i, ch in enumerate(b_list):
+                if ch in typo_map and random.random() < 0.6:
+                    b_list[i] = typo_map[ch]
+                    break
+            threats.append("".join(b_list) + f"-{w}{random.choice(tlds)}")
+        elif style == "punycode":
+            threats.append(f"xn--{b}-{w}{random.choice(tlds)}")
+        else:
+            fhd = random.choice(FREE_HOSTING_SUFFIXES)
+            threats.append(f"{b}-{w}.{fhd}")
+            
+    return threats
+
 def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[list[str], list[str]]:
     """
     Fetches decontaminated benign domains (Tranco + Cisco Umbrella) 
-    and ad/tracker domains (Database or StevenBlack hosts).
+    and ad/tracker/threat domains (StevenBlack, EasyPrivacy, URLhaus, Phishing.Army, ThreatFox, NoCoin, DGA).
     """
-    # 1. Fetch Master Known Ad Domains to purge them from benign sources
-    known_ads_set = set()
+    # 1. Fetch Master Known Ad Domains & Threat Intelligence Feeds
+    known_ads_and_threats = set()
     print(f"[*] Downloading master ad & tracker reference list (StevenBlack hosts)...")
     try:
         ad_url = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
@@ -246,12 +363,12 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
                     if len(parts) >= 2:
                         d = parts[1].strip().lower()
                         if "." in d and d not in ("localhost", "local"):
-                            known_ads_set.add(d)
-        print(f"    ✓ Loaded {len(known_ads_set):,} ground-truth ad/tracker domains.")
+                            known_ads_and_threats.add(d)
+        print(f"    ✓ Loaded {len(known_ads_and_threats):,} ground-truth ad/tracker domains.")
     except Exception as e:
         print(f"    [!] StevenBlack reference download notice: {e}")
 
-    # Also include EasyList Privacy (EasyPrivacy)
+    # EasyList Privacy (EasyPrivacy)
     print(f"[*] Downloading tracker reference list (EasyPrivacy)...")
     try:
         ep_url = "https://easylist.to/easylist/easyprivacy.txt"
@@ -262,12 +379,58 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
                 if line.startswith("||") and "^" in line:
                     d = line[2:line.index("^")].strip().lower()
                     if "." in d and "/" not in d and "*" not in d:
-                        known_ads_set.add(d)
-        print(f"    ✓ Total ground-truth ad & tracker domains (StevenBlack + EasyPrivacy): {len(known_ads_set):,}")
+                        known_ads_and_threats.add(d)
+        print(f"    ✓ Cumulative ad/trackers (StevenBlack + EasyPrivacy): {len(known_ads_and_threats):,}")
     except Exception as e:
         print(f"    [!] EasyPrivacy download notice: {e}")
 
-    # Add DB ads to master known ads set if DB is available
+    # Threat Intelligence Feed 1: URLhaus Malware & C2 domains
+    print(f"[*] Downloading Malware & C2 domains (URLhaus hosts)...")
+    try:
+        uh_url = "https://urlhaus.abuse.ch/downloads/hostfile/"
+        req = urllib.request.Request(uh_url, headers={"User-Agent": "BlockAds-AI-Trainer/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            for line in resp.read().decode("utf-8", errors="ignore").splitlines():
+                line = line.strip()
+                if line.startswith("127.0.0.1 "):
+                    parts = line.split()
+                    if len(parts) >= 2 and "." in parts[1]:
+                        known_ads_and_threats.add(parts[1].lower())
+        print(f"    ✓ Added live C2 & Malware domains from URLhaus.")
+    except Exception as e:
+        print(f"    [!] URLhaus feed notice: {e}")
+
+    # Threat Intelligence Feed 2: Phishing Army Extended
+    print(f"[*] Downloading Phishing domains (Phishing Army)...")
+    try:
+        pa_url = "https://phishing.army/download/phishing_army_blocklist_extended.txt"
+        req = urllib.request.Request(pa_url, headers={"User-Agent": "BlockAds-AI-Trainer/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            for line in resp.read().decode("utf-8", errors="ignore").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "." in line:
+                    known_ads_and_threats.add(line.lower())
+        print(f"    ✓ Added active Phishing campaigns from Phishing Army.")
+    except Exception as e:
+        print(f"    [!] Phishing Army feed notice: {e}")
+
+    # Threat Intelligence Feed 3: Cryptojacking / Mining domains
+    print(f"[*] Downloading Cryptojacking & Mining domains (NoCoin)...")
+    try:
+        coin_url = "https://raw.githubusercontent.com/hoshsadiq/adblock-nocoin-list/master/hosts.txt"
+        req = urllib.request.Request(coin_url, headers={"User-Agent": "BlockAds-AI-Trainer/1.0"})
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            for line in resp.read().decode("utf-8", errors="ignore").splitlines():
+                line = line.strip()
+                if line.startswith("0.0.0.0 "):
+                    parts = line.split()
+                    if len(parts) >= 2 and "." in parts[1]:
+                        known_ads_and_threats.add(parts[1].lower())
+        print(f"    ✓ Added cryptojacking & browser miner domains.")
+    except Exception as e:
+        print(f"    [!] NoCoin feed notice: {e}")
+
+    # Add DB ads to master known threats set if DB is available
     if not db_url and not os.environ.get("DATABASE_URL") and os.path.exists(".env"):
         try:
             with open(".env", "r", encoding="utf-8") as env_f:
@@ -283,9 +446,9 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
         target_db = db_url or os.environ.get("DATABASE_URL")
         db_ad_domains = fetch_ads_from_database(target_db, max_samples)
         for d in db_ad_domains:
-            known_ads_set.add(d)
+            known_ads_and_threats.add(d)
 
-    # 2. Fetch Tranco Top 1M (Apex Domains) with strict Ad Decontamination
+    # 2. Fetch Tranco Top 1M (Apex Domains) with strict Decontamination
     print(f"[*] Downloading top apex root domains from Tranco Top 1M...")
     tranco_domains = []
     try:
@@ -299,7 +462,7 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
                     if len(parts) >= 2:
                         d = parts[1].strip().lower()
                         tokens = [t for t in re.split(r"[-._0-9]+", d) if t]
-                        if "." in d and len(d) > 3 and d not in known_ads_set and not any(match_ad_roots(t) for t in tokens):
+                        if "." in d and len(d) > 3 and d not in known_ads_and_threats and not any(match_ad_roots(t) for t in tokens):
                             tranco_domains.append(d)
                             if len(tranco_domains) >= max_samples:
                                 break
@@ -307,7 +470,7 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
     except Exception as e:
         print(f"    [!] Tranco fetch notice: {e}")
 
-    # 3. Fetch Cisco Umbrella Top 1M (Enterprise Traffic & Subdomains) with strict Ad Decontamination
+    # 3. Fetch Cisco Umbrella Top 1M (Enterprise Traffic & Subdomains) with strict Decontamination
     print(f"[*] Downloading real enterprise DNS traffic from Cisco Umbrella Top 1M...")
     cisco_domains = []
     try:
@@ -321,8 +484,7 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
                     if len(parts) >= 2:
                         d = parts[1].strip().lower()
                         tokens = [t for t in re.split(r"[-._0-9]+", d) if t]
-                        # Purge ad trackers (e.g. pagead2, doubleclick) from Cisco benign list
-                        if "." in d and len(d) > 3 and d not in known_ads_set and not any(match_ad_roots(t) for t in tokens) and d not in ("localhost", "local"):
+                        if "." in d and len(d) > 3 and d not in known_ads_and_threats and not any(match_ad_roots(t) for t in tokens) and d not in ("localhost", "local"):
                             cisco_domains.append(d)
                             if len(cisco_domains) >= max_samples * 2:
                                 break
@@ -333,10 +495,11 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
     # 4. Essential Vietnamese portals & core global infrastructure
     vn_essential = [
         "vietcombank.com.vn", "portal.vietcombank.com.vn", "techcombank.com.vn",
-        "vpbank.com.vn", "mbbank.com.vn", "vnexpress.net", "dantri.com.vn",
-        "tuoitre.vn", "thanhnien.vn", "shopee.vn", "api.shopee.vn", "zalo.me",
-        "chinhphu.vn", "mof.gov.vn", "baochinhphu.vn", "tikicdn.com",
-        "support.apple.com", "docs.github.com", "cdn.jsdelivr.net", "s3.amazon.com"
+        "vpbank.com.vn", "mbbank.com.vn", "bidv.com.vn", "agribank.com.vn",
+        "vnexpress.net", "dantri.com.vn", "tuoitre.vn", "thanhnien.vn",
+        "shopee.vn", "api.shopee.vn", "zalo.me", "chinhphu.vn", "mof.gov.vn",
+        "baochinhphu.vn", "tikicdn.com", "tiki.vn", "support.apple.com",
+        "docs.github.com", "cdn.jsdelivr.net", "s3.amazon.com", "accounts.google.com"
     ]
 
     # Combine: 30% Tranco (apex) + 70% Cisco (subdomains) + Essential
@@ -348,21 +511,19 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
     random.shuffle(benign_domains)
     benign_domains = benign_domains[:max_samples]
 
-    # Prepare final Ad sample
-    if db_ad_domains and len(db_ad_domains) >= max_samples:
-        ad_domains = db_ad_domains[:max_samples]
-    else:
-        raw_ads = list(known_ads_set)
-        random.seed(42)
-        random.shuffle(raw_ads)
-        ad_domains = raw_ads[:max_samples]
+    # Prepare final Threat & Ad sample (Real Feeds + Synthetic DGA/Combos)
+    synthetic_threats = generate_synthetic_threats(min(8000, max_samples // 3))
+    raw_ads_threats = list(known_ads_and_threats) + synthetic_threats
+    random.seed(42)
+    random.shuffle(raw_ads_threats)
+    ad_threat_domains = raw_ads_threats[:max_samples]
 
-    print(f"    ✓ Final balanced benign dataset: {len(benign_domains):,} domains (zero ad contamination).")
-    print(f"    ✓ Final balanced ad dataset: {len(ad_domains):,} genuine ad/tracker domains.")
-    return benign_domains, ad_domains
+    print(f"    ✓ Final balanced benign dataset: {len(benign_domains):,} domains (zero contamination).")
+    print(f"    ✓ Final balanced threat dataset: {len(ad_threat_domains):,} domains (Ads, Phishing, DGA, Malware).")
+    return benign_domains, ad_threat_domains
 
 def main():
-    parser = argparse.ArgumentParser(description="Train BlockAds AI Domain Classifier")
+    parser = argparse.ArgumentParser(description="Train BlockAds AI Domain & Threat Classifier")
     parser.add_argument("--samples", type=int, default=25000, help="Samples per class (default: 25000)")
     parser.add_argument("--db-url", help="Optional PostgreSQL connection URL (or uses DATABASE_URL env)")
     parser.add_argument("--output-dir", default="models", help="Directory to save model artifacts")
@@ -371,24 +532,24 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     
     print("╔══════════════════════════════════════════════════════════════════╗")
-    print("║     BLOCKADS AI DOMAIN CLASSIFIER — TRAINING PIPELINE (V4)       ║")
+    print("║     BLOCKADS AI THREAT & DOMAIN CLASSIFIER — TRAINING (V5)       ║")
     print("╚══════════════════════════════════════════════════════════════════╝\n")
 
     t0 = time.time()
-    benign, ads = fetch_sample_dataset(args.samples, args.db_url)
+    benign, threats = fetch_sample_dataset(args.samples, args.db_url)
     
-    # Strictly purge any ad domains from benign set
-    ads_set = set(ads)
-    benign = [d for d in benign if d not in ads_set]
+    # Strictly purge any threat domains from benign set
+    threats_set = set(threats)
+    benign = [d for d in benign if d not in threats_set]
     
-    min_count = min(len(benign), len(ads))
+    min_count = min(len(benign), len(threats))
     benign = benign[:min_count]
-    ads = ads[:min_count]
+    threats = threats[:min_count]
 
-    domains = benign + ads
-    labels = [0] * len(benign) + [1] * len(ads)  # 0 = Benign, 1 = Ad/Tracker
+    domains = benign + threats
+    labels = [0] * len(benign) + [1] * len(threats)  # 0 = Benign, 1 = Ad/Threat
 
-    print(f"\n[*] Extracting 16 calibrated features for {len(domains):,} total domains ({len(benign):,} Benign vs {len(ads):,} Ads)...")
+    print(f"\n[*] Extracting 24 calibrated features for {len(domains):,} total domains ({len(benign):,} Benign vs {len(threats):,} Threats)...")
     X = np.array([extract_features(d) for d in domains])
     y = np.array(labels)
 
@@ -401,7 +562,7 @@ def main():
 
     print("\n[*] Training Gradient Boosted Decision Forest classifier...")
     clf = HistGradientBoostingClassifier(
-        max_iter=200,
+        max_iter=220,
         learning_rate=0.08,
         max_leaf_nodes=63,
         l2_regularization=2.0,
@@ -413,51 +574,68 @@ def main():
     preds = clf.predict(X_test)
     acc = accuracy_score(y_test, preds)
 
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 65)
     print("                 AI MODEL EVALUATION REPORT                 ")
-    print("=" * 60)
+    print("=" * 65)
     print(f"Overall Accuracy:  {acc * 100:.2f}%\n")
-    print(classification_report(y_test, preds, target_names=["Benign (Safe)", "Ad / Tracker"]))
+    print(classification_report(y_test, preds, target_names=["Benign (Safe)", "Ad / Threat"]))
 
-    # Test sample domains (famous benign, vietnamese sites, and known ad trackers)
+    # Test sample domains across various categories: Benign, Banking, Ads, Phishing, DGA, Tunnel, Free Hosting
     test_samples = [
+        # Benign & Critical Infrastructure
         "wikipedia.org",
         "vnexpress.net",
         "dantri.com.vn",
         "github.com",
-        "netflix.com",
-        "support.apple.com",
         "portal.vietcombank.com.vn",
         "cdn.jsdelivr.net",
         "s3.amazon.com",
         "docs.github.com",
+        # Ad & Tracker
         "adservice.google.com",
         "pagead2.googlesyndication.com",
-        "trck.pxl-telemetry.xyz",
         "delivery.adnxs.com",
-        "tracking-analytics-metric.biz",
-        "ads.twitter.com",
         "analytics.tiktok.com",
-        "pixel.facebook.com"
+        # Phishing / Combosquatting / Typosquatting
+        "paypal-security-login.xyz",
+        "vietcombank-auth-verify.top",
+        "shopee-gift-login.site",
+        "netflix-billing-update.com",
+        # Free Web Hosting Abuse & Tunnels
+        "account-verification.pages.dev",
+        "secure-portal.vercel.app",
+        "payload.ngrok-free.app",
+        # DGA & High Entropy
+        "bdd640f06671ad1.top",
+        "vrjnvgfygwwqc38hyf9sxmeco.biz",
+        # Cryptojacking
+        "coinhive.com",
+        "webminer.cryptoloot.pro",
+        # Homograph / Punycode (e.g. Cyrillic 'a' in apple)
+        "xn--pple-43d.com"
     ]
-    print("=" * 60)
-    print("               LIVE INFERENCE PREDICTION TESTS              ")
-    print("=" * 60)
+    print("=" * 65)
+    print("            LIVE MULTI-THREAT PREDICTION TESTS               ")
+    print("=" * 65)
     for sample in test_samples:
         feat = np.array([extract_features(sample)])
-        prob_ad = clf.predict_proba(feat)[0][1]
-        decision = "⛔ BLOCK (AD/TRACKER)" if prob_ad >= 0.5 else "✅ PASS (SAFE)"
-        print(f"{sample:<35} ➔ {decision:<24} (Ad Score: {prob_ad*100:.1f}%)")
+        prob_threat = clf.predict_proba(feat)[0][1]
+        decision = "⛔ BLOCK (THREAT/AD)" if prob_threat >= 0.65 else "✅ PASS (SAFE)"
+        print(f"{sample:<35} ➔ {decision:<24} (Threat Score: {prob_threat*100:.1f}%)")
 
     # Export model metadata & config
     export_info = {
         "model_type": "HistGradientBoostingClassifier",
-        "version": "v4_decontaminated_balanced",
+        "version": "v5_threat_intel_multi_vector",
         "accuracy": round(acc, 4),
+        "decision_threshold": 0.65,
         "trained_samples": len(domains),
         "feature_names": FEATURE_NAMES,
         "ad_roots": sorted(AD_ROOTS),
+        "brand_names": sorted(list(BRAND_NAMES)),
+        "phishing_keywords": sorted(list(PHISHING_KEYWORDS)),
         "benign_sub_prefixes": sorted(list(BENIGN_SUB_PREFIXES)),
+        "suspicious_tlds": sorted(list(SUSPICIOUS_TLDS)),
         "created_at": time.strftime("%Y-%m-%d %H:%M:%SZ", time.gmtime()),
     }
     info_path = os.path.join(args.output_dir, "model_meta.json")
