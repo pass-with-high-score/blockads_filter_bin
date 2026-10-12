@@ -58,10 +58,23 @@ AD_ROOTS = [
     "hotjar", "amplitude", "scorecardresearch", "moatads"
 ]
 
+# High-Risk & Most Abused TLDs (Spamhaus Top 10 + Global Abuse Feeds)
+SPAMHAUS_TOP_ABUSED_TLDS = {
+    ".work", ".fit", ".surf", ".review", ".asia",
+    ".tokyo", ".cn", ".monster", ".info", ".xn--czru2d"  # .机构 (xn--czru2d)
+}
+
 SUSPICIOUS_TLDS = {
-    ".xyz", ".top", ".click", ".link", ".loan", ".buzz", ".work",
+    # Spamhaus Top 10 Most Abused
+    ".work", ".fit", ".surf", ".review", ".asia",
+    ".tokyo", ".cn", ".monster", ".info", ".xn--czru2d",
+    # Notorious High Abuse / Phishing / Malware TLDs
+    ".xyz", ".top", ".click", ".link", ".loan", ".buzz",
     ".gq", ".cf", ".ga", ".ml", ".tk", ".men", ".stream", ".date",
-    ".zip", ".mov", ".cam", ".site", ".live", ".online", ".surf"
+    ".zip", ".mov", ".cam", ".site", ".live", ".online",
+    ".icu", ".cyou", ".party", ".trade", ".racing", ".win", ".bid",
+    ".vip", ".uno", ".rest", ".sbs", ".cfd", ".quest", ".beauty",
+    ".hair", ".skin", ".mom", ".bar", ".degree", ".best", ".casa"
 }
 
 # Threat & Phishing Detection Targets

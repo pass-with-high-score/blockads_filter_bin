@@ -32,9 +32,16 @@ AD_ROOTS = [
 ]
 
 SUSPICIOUS_TLDS = {
-    ".xyz", ".top", ".click", ".link", ".loan", ".buzz", ".work",
+    # Spamhaus Top 10 Most Abused
+    ".work", ".fit", ".surf", ".review", ".asia",
+    ".tokyo", ".cn", ".monster", ".info", ".xn--czru2d",
+    # Notorious High Abuse / Phishing / Malware TLDs
+    ".xyz", ".top", ".click", ".link", ".loan", ".buzz",
     ".gq", ".cf", ".ga", ".ml", ".tk", ".men", ".stream", ".date",
-    ".zip", ".mov", ".cam", ".site", ".live", ".online", ".surf"
+    ".zip", ".mov", ".cam", ".site", ".live", ".online",
+    ".icu", ".cyou", ".party", ".trade", ".racing", ".win", ".bid",
+    ".vip", ".uno", ".rest", ".sbs", ".cfd", ".quest", ".beauty",
+    ".hair", ".skin", ".mom", ".bar", ".degree", ".best", ".casa"
 }
 
 BRAND_NAMES = {
