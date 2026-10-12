@@ -108,6 +108,33 @@ def decode_punycode_and_homoglyphs(domain: str) -> tuple[str, float]:
         
     return "".join(chars), is_spoofed
 
+def levenshtein_distance(s1: str, s2: str) -> int:
+    if len(s1) < len(s2):
+        return levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+def check_typosquatting(sld: str) -> float:
+    sld = sld.lower().strip()
+    for b in BRAND_NAMES:
+        if sld == b:
+            return 0.0
+        max_dist = 2 if len(b) >= 9 else 1
+        dist = levenshtein_distance(sld, b)
+        if 1 <= dist <= max_dist:
+            return 1.0
+    return 0.0
+
 def shannon_entropy(s: str) -> float:
     if not s:
         return 0.0
@@ -187,13 +214,16 @@ def extract_features(domain: str) -> list[float]:
     vowel_ratio = vowels / max(1, length)
     
     has_brand_combo = 0.0
-    for b in BRAND_NAMES:
-        if b in domain and sld != b:
-            has_brand_combo = 1.0
-            break
-        if b in norm_domain and (sld != b or is_idn_spoof > 0.0):
-            has_brand_combo = 1.0
-            break
+    if check_typosquatting(sld) > 0.0 or check_typosquatting(norm_sld) > 0.0:
+        has_brand_combo = 1.0
+    else:
+        for b in BRAND_NAMES:
+            if b in domain and sld != b:
+                has_brand_combo = 1.0
+                break
+            if b in norm_domain and (sld != b or is_idn_spoof > 0.0):
+                has_brand_combo = 1.0
+                break
             
     phish_hits = sum(1 for t in tokens if t in PHISHING_KEYWORDS) + sum(1 for t in norm_tokens if t in PHISHING_KEYWORDS)
     sub_phish_hits = sum(1 for t in sub_tokens if t in PHISHING_KEYWORDS)

@@ -142,6 +142,35 @@ def decode_punycode_and_homoglyphs(domain: str) -> tuple[str, float]:
         
     return "".join(chars), is_spoofed
 
+def levenshtein_distance(s1: str, s2: str) -> int:
+    """Calculates edit distance between two strings."""
+    if len(s1) < len(s2):
+        return levenshtein_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+def check_typosquatting(sld: str) -> float:
+    """Detects 1-2 edit distance mutations on high-value brand names (e.g. payypal, gooogle)."""
+    sld = sld.lower().strip()
+    for b in BRAND_NAMES:
+        if sld == b:
+            return 0.0  # Exact authentic brand
+        max_dist = 2 if len(b) >= 9 else 1
+        dist = levenshtein_distance(sld, b)
+        if 1 <= dist <= max_dist:
+            return 1.0
+    return 0.0
+
 def shannon_entropy(s: str) -> float:
     if not s:
         return 0.0
@@ -233,16 +262,18 @@ def extract_features(domain: str) -> list[float]:
     
     # 3. Phishing / Typosquatting / Combosquatting Features
     has_brand_combo = 0.0
-    # Check both original domain and normalized homoglyph domain
-    for b in BRAND_NAMES:
-        # Check standard combosquatting
-        if b in domain and sld != b:
-            has_brand_combo = 1.0
-            break
-        # Check homoglyph / typosquatting spoof
-        if b in norm_domain and (sld != b or is_idn_spoof > 0.0):
-            has_brand_combo = 1.0
-            break
+    # A. Check Typosquatting (Levenshtein distance <= 1-2 on high-profile brands: e.g. payypal, gooogle)
+    if check_typosquatting(sld) > 0.0 or check_typosquatting(norm_sld) > 0.0:
+        has_brand_combo = 1.0
+    else:
+        # B. Check Combosquatting & Homoglyphs
+        for b in BRAND_NAMES:
+            if b in domain and sld != b:
+                has_brand_combo = 1.0
+                break
+            if b in norm_domain and (sld != b or is_idn_spoof > 0.0):
+                has_brand_combo = 1.0
+                break
             
     phish_hits = sum(1 for t in tokens if t in PHISHING_KEYWORDS) + sum(1 for t in norm_tokens if t in PHISHING_KEYWORDS)
     sub_phish_hits = sum(1 for t in sub_tokens if t in PHISHING_KEYWORDS)
@@ -389,12 +420,23 @@ def generate_synthetic_threats(count: int = 5000) -> list[str]:
         if style == "combo":
             threats.append(f"{b}-{w}{random.choice(tlds)}")
         elif style == "typo":
+            # Real typosquatting: duplicate a letter (payypal, gooogle) or drop a letter (amzon) or leetspeak (paypa1)
             b_list = list(b)
-            for i, ch in enumerate(b_list):
-                if ch in typo_map and random.random() < 0.6:
-                    b_list[i] = typo_map[ch]
-                    break
-            threats.append("".join(b_list) + f"-{w}{random.choice(tlds)}")
+            typo_mode = random.choice(["dup", "drop", "leet"])
+            if typo_mode == "dup" and len(b_list) > 3:
+                idx = random.randint(1, len(b_list) - 1)
+                b_list.insert(idx, b_list[idx])
+                threats.append("".join(b_list) + f"{random.choice(tlds)}")
+            elif typo_mode == "drop" and len(b_list) > 4:
+                idx = random.randint(1, len(b_list) - 2)
+                b_list.pop(idx)
+                threats.append("".join(b_list) + f"{random.choice(tlds)}")
+            else:
+                for i, ch in enumerate(b_list):
+                    if ch in typo_map and random.random() < 0.6:
+                        b_list[i] = typo_map[ch]
+                        break
+                threats.append("".join(b_list) + f"-{w}{random.choice(tlds)}")
         elif style == "punycode":
             # Generate authentic punycode spoof (e.g. replacing 'a' or 'o' with cyrillic lookalike)
             try:
@@ -690,7 +732,10 @@ def main():
         "coinhive.com",
         "webminer.cryptoloot.pro",
         # Homograph / Punycode (e.g. Cyrillic 'a' in apple)
-        "xn--pple-43d.com"
+        "xn--pple-43d.com",
+        # Typosquatting (Levenshtein mutation)
+        "payypal.com",
+        "gooogle.com"
     ]
     print("=" * 65)
     print("            LIVE MULTI-THREAT PREDICTION TESTS               ")
