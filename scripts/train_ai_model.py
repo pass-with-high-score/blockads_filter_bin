@@ -93,6 +93,55 @@ CRYPTO_KEYWORDS = {
     "webminer", "monero", "minexmr", "nanopool", "stratum"
 }
 
+HOMOGLYPH_MAP = {
+    "а": "a", "с": "c", "е": "e", "о": "o", "р": "p", "х": "x", "у": "y",
+    "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d", "ԛ": "q", "ԝ": "w",
+    "0": "o", "1": "l", "3": "e", "4": "a", "5": "s"
+}
+
+def decode_punycode_and_homoglyphs(domain: str) -> tuple[str, float]:
+    """
+    Decodes Punycode (xn--) and normalizes Cyrillic/lookalike characters.
+    Returns (normalized_domain, is_spoof_flag).
+    """
+    domain = domain.lower().strip()
+    is_spoofed = 0.0
+    decoded = domain
+    
+    # 1. Punycode decoding
+    if "xn--" in domain:
+        is_spoofed = 1.0
+        try:
+            import idna
+            parts = domain.split(".")
+            decoded_parts = []
+            for p in parts:
+                if p.startswith("xn--"):
+                    try:
+                        decoded_parts.append(idna.decode(p))
+                    except Exception:
+                        decoded_parts.append(p)
+                else:
+                    decoded_parts.append(p)
+            decoded = ".".join(decoded_parts)
+        except Exception:
+            pass
+            
+    # 2. Lookalike / Homoglyph mapping
+    chars = []
+    has_lookalike = False
+    for ch in decoded:
+        if ch in HOMOGLYPH_MAP:
+            has_lookalike = True
+            chars.append(HOMOGLYPH_MAP[ch])
+        else:
+            chars.append(ch)
+            
+    if has_lookalike and ("xn--" in domain or any(b in "".join(chars) for b in BRAND_NAMES)):
+        is_spoofed = 1.0
+        
+    return "".join(chars), is_spoofed
+
 def shannon_entropy(s: str) -> float:
     if not s:
         return 0.0
@@ -148,7 +197,11 @@ def extract_features(domain: str) -> list[float]:
     if domain.startswith("www."):
         domain = domain[4:]
     
+    # Normalize IDN / Punycode / Homoglyph lookalikes
+    norm_domain, is_idn_spoof = decode_punycode_and_homoglyphs(domain)
+    
     subdomains, sld, tld = split_domain_parts(domain)
+    norm_subdomains, norm_sld, _ = split_domain_parts(norm_domain)
     
     length = len(domain)
     hyphens = domain.count("-")
@@ -157,6 +210,7 @@ def extract_features(domain: str) -> list[float]:
     entropy = shannon_entropy(domain)
     
     tokens = [t for t in re.split(r"[-._0-9]+", domain) if t]
+    norm_tokens = [t for t in re.split(r"[-._0-9]+", norm_domain) if t]
     sub_tokens = [t for sub in subdomains for t in re.split(r"[-._0-9]+", sub) if t]
     sld_tokens = [t for t in re.split(r"[-._0-9]+", sld) if t]
     
@@ -179,17 +233,22 @@ def extract_features(domain: str) -> list[float]:
     
     # 3. Phishing / Typosquatting / Combosquatting Features
     has_brand_combo = 0.0
+    # Check both original domain and normalized homoglyph domain
     for b in BRAND_NAMES:
+        # Check standard combosquatting
         if b in domain and sld != b:
             has_brand_combo = 1.0
             break
+        # Check homoglyph / typosquatting spoof
+        if b in norm_domain and (sld != b or is_idn_spoof > 0.0):
+            has_brand_combo = 1.0
+            break
             
-    phish_hits = sum(1 for t in tokens if t in PHISHING_KEYWORDS)
+    phish_hits = sum(1 for t in tokens if t in PHISHING_KEYWORDS) + sum(1 for t in norm_tokens if t in PHISHING_KEYWORDS)
     sub_phish_hits = sum(1 for t in sub_tokens if t in PHISHING_KEYWORDS)
-    has_phish_token = 1.0 if phish_hits > 0 else 0.0
     
     # 4. Infrastructure & Threat Evasion Features
-    is_idn_punycode = 1.0 if ("xn--" in domain) else 0.0
+    is_idn_punycode = 1.0 if (is_idn_spoof > 0.0 or "xn--" in domain) else 0.0
     is_fhd = 1.0 if any(domain.endswith(h) for h in FREE_HOSTING_SUFFIXES) else 0.0
     is_ddns_tunnel = 1.0 if any(p in domain for p in DDNS_TUNNEL_PATTERNS) else 0.0
     has_crypto = 1.0 if any(c in domain for c in CRYPTO_KEYWORDS) else 0.0
@@ -337,7 +396,24 @@ def generate_synthetic_threats(count: int = 5000) -> list[str]:
                     break
             threats.append("".join(b_list) + f"-{w}{random.choice(tlds)}")
         elif style == "punycode":
-            threats.append(f"xn--{b}-{w}{random.choice(tlds)}")
+            # Generate authentic punycode spoof (e.g. replacing 'a' or 'o' with cyrillic lookalike)
+            try:
+                import idna
+                spoof_map = {"a": "а", "o": "о", "e": "е", "p": "р", "c": "с"}
+                b_spoofed = list(b)
+                replaced = False
+                for idx, ch in enumerate(b_spoofed):
+                    if ch in spoof_map:
+                        b_spoofed[idx] = spoof_map[ch]
+                        replaced = True
+                        break
+                if replaced:
+                    puny = idna.encode("".join(b_spoofed)).decode("ascii")
+                    threats.append(f"{puny}{random.choice(tlds)}")
+                else:
+                    threats.append(f"xn--{b}-{w}{random.choice(tlds)}")
+            except Exception:
+                threats.append(f"xn--{b}-{w}{random.choice(tlds)}")
         else:
             fhd = random.choice(FREE_HOSTING_SUFFIXES)
             threats.append(f"{b}-{w}.{fhd}")

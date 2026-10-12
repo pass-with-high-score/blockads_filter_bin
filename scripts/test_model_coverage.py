@@ -65,6 +65,49 @@ CRYPTO_KEYWORDS = {
     "webminer", "monero", "minexmr", "nanopool", "stratum"
 }
 
+HOMOGLYPH_MAP = {
+    "а": "a", "с": "c", "е": "e", "о": "o", "р": "p", "х": "x", "у": "y",
+    "і": "i", "ј": "j", "ѕ": "s", "ԁ": "d", "ԛ": "q", "ԝ": "w",
+    "0": "o", "1": "l", "3": "e", "4": "a", "5": "s"
+}
+
+def decode_punycode_and_homoglyphs(domain: str) -> tuple[str, float]:
+    domain = domain.lower().strip()
+    is_spoofed = 0.0
+    decoded = domain
+    
+    if "xn--" in domain:
+        is_spoofed = 1.0
+        try:
+            import idna
+            parts = domain.split(".")
+            decoded_parts = []
+            for p in parts:
+                if p.startswith("xn--"):
+                    try:
+                        decoded_parts.append(idna.decode(p))
+                    except Exception:
+                        decoded_parts.append(p)
+                else:
+                    decoded_parts.append(p)
+            decoded = ".".join(decoded_parts)
+        except Exception:
+            pass
+            
+    chars = []
+    has_lookalike = False
+    for ch in decoded:
+        if ch in HOMOGLYPH_MAP:
+            has_lookalike = True
+            chars.append(HOMOGLYPH_MAP[ch])
+        else:
+            chars.append(ch)
+            
+    if has_lookalike and ("xn--" in domain or any(b in "".join(chars) for b in BRAND_NAMES)):
+        is_spoofed = 1.0
+        
+    return "".join(chars), is_spoofed
+
 def shannon_entropy(s: str) -> float:
     if not s:
         return 0.0
@@ -111,7 +154,10 @@ def extract_features(domain: str) -> list[float]:
     if domain.startswith("www."):
         domain = domain[4:]
     
+    norm_domain, is_idn_spoof = decode_punycode_and_homoglyphs(domain)
+    
     subdomains, sld, tld = split_domain_parts(domain)
+    norm_subdomains, norm_sld, _ = split_domain_parts(norm_domain)
     
     length = len(domain)
     hyphens = domain.count("-")
@@ -120,6 +166,7 @@ def extract_features(domain: str) -> list[float]:
     entropy = shannon_entropy(domain)
     
     tokens = [t for t in re.split(r"[-._0-9]+", domain) if t]
+    norm_tokens = [t for t in re.split(r"[-._0-9]+", norm_domain) if t]
     sub_tokens = [t for sub in subdomains for t in re.split(r"[-._0-9]+", sub) if t]
     sld_tokens = [t for t in re.split(r"[-._0-9]+", sld) if t]
     
@@ -144,11 +191,14 @@ def extract_features(domain: str) -> list[float]:
         if b in domain and sld != b:
             has_brand_combo = 1.0
             break
+        if b in norm_domain and (sld != b or is_idn_spoof > 0.0):
+            has_brand_combo = 1.0
+            break
             
-    phish_hits = sum(1 for t in tokens if t in PHISHING_KEYWORDS)
+    phish_hits = sum(1 for t in tokens if t in PHISHING_KEYWORDS) + sum(1 for t in norm_tokens if t in PHISHING_KEYWORDS)
     sub_phish_hits = sum(1 for t in sub_tokens if t in PHISHING_KEYWORDS)
     
-    is_idn_punycode = 1.0 if ("xn--" in domain) else 0.0
+    is_idn_punycode = 1.0 if (is_idn_spoof > 0.0 or "xn--" in domain) else 0.0
     is_fhd = 1.0 if any(domain.endswith(h) for h in FREE_HOSTING_SUFFIXES) else 0.0
     is_ddns_tunnel = 1.0 if any(p in domain for p in DDNS_TUNNEL_PATTERNS) else 0.0
     has_crypto = 1.0 if any(c in domain for c in CRYPTO_KEYWORDS) else 0.0
