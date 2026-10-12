@@ -587,15 +587,17 @@ def fetch_sample_dataset(max_samples: int = 25000, db_url: str = None) -> tuple[
     random.shuffle(benign_domains)
     benign_domains = benign_domains[:max_samples]
 
-    # Prepare final Threat & Ad sample (Real Feeds + Synthetic DGA/Combos)
-    synthetic_threats = generate_synthetic_threats(min(8000, max_samples // 3))
+    # Prepare final Threat & Ad sample (Real Feeds + Synthetic DGA/Combos/Homoglyphs)
+    # Ensure strong representation of zero-day threats, homoglyphs, and DGA (up to 15% of threat sample)
+    synth_count = max(10000, int(max_samples * 0.15))
+    synthetic_threats = generate_synthetic_threats(synth_count)
     raw_ads_threats = list(known_ads_and_threats) + synthetic_threats
     random.seed(42)
     random.shuffle(raw_ads_threats)
     ad_threat_domains = raw_ads_threats[:max_samples]
 
     print(f"    ✓ Final balanced benign dataset: {len(benign_domains):,} domains (zero contamination).")
-    print(f"    ✓ Final balanced threat dataset: {len(ad_threat_domains):,} domains (Ads, Phishing, DGA, Malware).")
+    print(f"    ✓ Final balanced threat dataset: {len(ad_threat_domains):,} domains (Ads, Phishing, DGA, Malware, Homoglyphs).")
     return benign_domains, ad_threat_domains
 
 def main():
