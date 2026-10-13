@@ -21,6 +21,8 @@ export async function OPTIONS() {
   return addCors(new NextResponse(null, { status: 204 }));
 }
 
+export const dynamic = "force-dynamic";
+
 /**
  * POST /api/build
  * Compile a filter list. Delegates heavy compilation to the Go Container Worker,

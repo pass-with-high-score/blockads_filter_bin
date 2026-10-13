@@ -21,6 +21,8 @@ export async function OPTIONS() {
   return addCors(new NextResponse(null, { status: 204 }));
 }
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   try {
     // ── 1. Validate Authentication ──

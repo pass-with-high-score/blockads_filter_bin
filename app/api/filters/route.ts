@@ -19,6 +19,8 @@ export async function OPTIONS() {
   return addCors(new NextResponse(null, { status: 204 }));
 }
 
+export const dynamic = "force-dynamic";
+
 // ── GET /api/filters (List Filters) ──
 export async function GET(req: NextRequest) {
   try {

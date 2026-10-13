@@ -18,7 +18,7 @@ export async function OPTIONS() {
   return addCors(new NextResponse(null, { status: 204 }));
 }
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 // In-memory cache per worker isolate (10 minutes)
 let memoryCache: { body: any; expiresAt: number } | null = null;
