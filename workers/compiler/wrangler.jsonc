@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "blockads-compiler",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-05",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "containers": [
+    {
+      "class_name": "CompilerContainer",
+      "image": "registry.cloudflare.com/9daa44579604e972e3ca21aa980a92d7/blockads-compiler:v1",
+      "instance_type": "standard-1",
+      "max_instances": 5
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "COMPILER_CONTAINER",
+        "class_name": "CompilerContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CompilerContainer"]
+    }
+  ],
+  "vars": {
+    "R2_BUCKET_NAME": "blockads-filters",
+    "R2_PUBLIC_URL": "https://filter.pwhs.app",
+    "R2_ACCOUNT_ID": "9daa44579604e972e3ca21aa980a92d7"
+  }
+}

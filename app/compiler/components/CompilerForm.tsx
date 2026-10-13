@@ -6,6 +6,7 @@ import { Loader2, Zap, AlertCircle, CheckCircle2, Download, Archive, Hash } from
 export default function CompilerForm() {
   const [url, setUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("Compiling...");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     downloadUrl: string;
@@ -18,16 +19,15 @@ export default function CompilerForm() {
     if (!url.trim()) return;
 
     setIsLoading(true);
+    setLoadingMessage("Compiling...");
     setError(null);
     setResult(null);
 
     try {
-      // In a real environment, this might be configured differently based on deployment.
-      // Clean up baseUrl trailing slash if any; ignore [SENSITIVE] placeholder
       const envUrl = process.env.NEXT_PUBLIC_COMPILER_API_URL;
       const rawBaseUrl = (envUrl && envUrl !== "[SENSITIVE]") ? envUrl : "";
       const baseUrl = rawBaseUrl.endsWith("/") ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
-      
+
       const res = await fetch(`${baseUrl}/api/build`, {
         method: "POST",
         headers: {
@@ -49,18 +49,56 @@ export default function CompilerForm() {
         throw new Error(data.message || "An unknown error occurred.");
       }
 
+      // If compilation is dispatched to a background Cloudflare Workflow
+      if (data.status === "processing" && data.workflowId) {
+        setLoadingMessage("Workflow running in background...");
+        const workflowId = data.workflowId;
+        const startTime = Date.now();
+        const maxWaitMs = 15 * 60 * 1000; // 15 mins timeout
+
+        while (Date.now() - startTime < maxWaitMs) {
+          await new Promise((resolve) => setTimeout(resolve, 2500));
+          const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+          setLoadingMessage(`Building via Workflow (${elapsedSec}s)...`);
+
+          try {
+            const pollRes = await fetch(`${baseUrl}/api/build?workflowId=${encodeURIComponent(workflowId)}`);
+            if (!pollRes.ok) continue;
+            const pollData = await pollRes.json();
+
+            if (pollData.status === "success") {
+              setResult({
+                downloadUrl: pollData.downloadUrl,
+                ruleCount: pollData.ruleCount,
+                fileSize: pollData.fileSize,
+              });
+              setUrl("");
+              return;
+            } else if (pollData.status === "error") {
+              throw new Error(pollData.message || "Workflow compilation failed.");
+            }
+          } catch (pollErr: any) {
+            if (pollErr.message && !pollErr.message.includes("Failed to fetch")) {
+              throw pollErr;
+            }
+          }
+        }
+        throw new Error("Compilation timed out while waiting for workflow execution.");
+      }
+
+      // If returned directly / cached
       setResult({
         downloadUrl: data.downloadUrl,
         ruleCount: data.ruleCount,
         fileSize: data.fileSize,
       });
 
-      // Clear the url when successful to allow new submissions
       setUrl("");
     } catch (err: any) {
       setError(err.message || "Failed to connect to the compiler service.");
     } finally {
       setIsLoading(false);
+      setLoadingMessage("Compiling...");
     }
   };
 
@@ -94,7 +132,7 @@ export default function CompilerForm() {
           ) : (
             <Zap className="w-5 h-5" />
           )}
-          <span>{isLoading ? "Compiling..." : "Build Binary"}</span>
+          <span>{isLoading ? loadingMessage : "Build Binary"}</span>
         </button>
       </form>
 

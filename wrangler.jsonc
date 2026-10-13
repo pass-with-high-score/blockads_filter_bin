@@ -16,12 +16,19 @@
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"
 	},
+	"limits": {
+		"cpu_ms": 30000
+	},
 	"services": [
 		{
 			// Self-reference service binding, the service name must match the worker name
 			// see https://opennext.js.org/cloudflare/caching
 			"binding": "WORKER_SELF_REFERENCE",
 			"service": "blockads-filtering"
+		},
+		{
+			"binding": "COMPILER_SERVICE",
+			"service": "blockads-compiler"
 		}
 	],
 	"r2_buckets": [
@@ -43,7 +50,8 @@
 	"hyperdrive": [
 		{
 			"binding": "HYPERDRIVE",
-			"id": "fa0c53e971764e94bc66af9426339eef"
+			"id": "fa0c53e971764e94bc66af9426339eef",
+			"localConnectionString": "postgresql://postgres:postgres@localhost:5432/postgres"
 		}
 	]
 }

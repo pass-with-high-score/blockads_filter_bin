@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getFilterByUrl, upsertFilter } from "@/app/lib/db";
 import { validateFilterListURL, deriveNameFromURL, sanitizeName, compileFilterList } from "@/app/lib/compiler";
 import { uploadFilter } from "@/app/lib/r2";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +21,11 @@ export async function OPTIONS() {
   return addCors(new NextResponse(null, { status: 204 }));
 }
 
+/**
+ * POST /api/build
+ * Compile a filter list. Delegates heavy compilation to the Go Container Worker,
+ * returning synchronous results required by the Android client and frontend.
+ */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -53,7 +59,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 2. Validate URL ──
+    // ── 2. Validate URL syntax & reachability ──
     console.log(`[API] Validating URL: ${url}`);
     try {
       await validateFilterListURL(url);
@@ -64,7 +70,6 @@ export async function POST(req: NextRequest) {
       ));
     }
 
-    // ── 3. Compile filter list ──
     const rawName = deriveNameFromURL(url);
     const name = sanitizeName(rawName);
     if (!name) {
@@ -74,7 +79,47 @@ export async function POST(req: NextRequest) {
       ));
     }
 
-    console.log(`[API] Starting compilation for '${name}'`);
+    // ── 3. Delegate to Go Container Worker (via Service Binding) ──
+    let compilerService: any = null;
+    try {
+      const ctx = getCloudflareContext();
+      compilerService = (ctx?.env as any)?.COMPILER_SERVICE;
+    } catch {}
+
+    if (compilerService) {
+      console.log(`[API] 🚀 Delegating compilation to Cloudflare Go Container (Service Binding) for: ${url}`);
+      try {
+        const targetUrl = new URL(req.url);
+        targetUrl.pathname = "/api/build";
+        const containerReq = new Request(targetUrl.toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        const containerResp = await compilerService.fetch(containerReq);
+        const data = await containerResp.json();
+        return addCors(NextResponse.json(data, { status: containerResp.status }));
+      } catch (err: any) {
+        console.error(`[API] Service Binding call failed, trying fallback:`, err);
+      }
+    }
+
+    // ── 4. Fallback to direct Container Worker HTTP endpoint ──
+    try {
+      console.log(`[API] 🚀 Delegating compilation to Cloudflare Go Container (HTTP) for: ${url}`);
+      const containerResp = await fetch("https://blockads-compiler.nguyenquangminh623.workers.dev/api/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await containerResp.json();
+      return addCors(NextResponse.json(data, { status: containerResp.status }));
+    } catch (containerErr: any) {
+      console.error(`[API] Container HTTP proxy failed, falling back to local JS compile:`, containerErr);
+    }
+
+    // ── 5. Final fallback: local JS compilation (if container offline) ──
+    console.log(`[API] Starting fallback JS compilation for '${name}'`);
     let result;
     try {
       result = await compileFilterList(name, url);
@@ -88,7 +133,6 @@ export async function POST(req: NextRequest) {
       ));
     }
 
-    // ── 4. Upload to Cloudflare R2 ──
     console.log(`[API] Uploading ${name}.zip to R2 (${result.fileSize} bytes)`);
     let downloadUrl;
     try {
@@ -100,16 +144,14 @@ export async function POST(req: NextRequest) {
       ));
     }
 
-    // Add cache-buster to download URL
     downloadUrl = `${downloadUrl}?v=${Math.floor(Date.now() / 1000)}`;
     console.log(`[API] ✓ Uploaded to R2: ${downloadUrl}`);
 
-    // ── 5. Cache record in PostgreSQL ──
     try {
       await upsertFilter(name, url, downloadUrl, result.ruleCount, result.fileSize);
       console.log(`[API] ✓ DB record upserted: url=${url}`);
     } catch (err: any) {
-      console.error(`[API] ⚠ DB cache upsert failed (upload succeeded):`, err);
+      console.error(`[API] ⚠ DB cache upsert failed:`, err);
     }
 
     return addCors(NextResponse.json({

@@ -4,8 +4,13 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 function getConnectionString(): string {
   try {
     const ctx = getCloudflareContext();
-    if ((ctx?.env as any)?.HYPERDRIVE?.connectionString) {
-      return (ctx.env as any).HYPERDRIVE.connectionString;
+    try {
+      const hyperdrive = (ctx?.env as any)?.HYPERDRIVE;
+      if (hyperdrive?.connectionString) {
+        return hyperdrive.connectionString;
+      }
+    } catch {
+      // Local Hyperdrive without configured localConnectionString
     }
   } catch {
     // Not running inside a Cloudflare request context or during build
