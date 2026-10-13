@@ -46,7 +46,10 @@ export async function POST(req: NextRequest) {
     // ── 1. Check database cache ──
     if (!forceRebuild) {
       try {
-        const existing = await getFilterByUrl(url);
+        const timeoutPromise = new Promise<null>((_, reject) =>
+          setTimeout(() => reject(new Error("DB cache check timed out")), 3000)
+        );
+        const existing = await Promise.race([getFilterByUrl(url), timeoutPromise]);
         if (existing) {
           console.log(`[API] Returning cached filter for: ${url}`);
           return addCors(NextResponse.json({
@@ -57,7 +60,7 @@ export async function POST(req: NextRequest) {
           }));
         }
       } catch (err: any) {
-        console.error(`[API] DB cache check failed:`, err);
+        console.error(`[API] DB cache check failed or timed out:`, err?.message || err);
       }
     }
 
