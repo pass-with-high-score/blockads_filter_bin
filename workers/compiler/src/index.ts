@@ -40,7 +40,7 @@ export default {
 
     // Health check
     if (url.pathname === "/health") {
-      return Response.json({ status: "ok", service: "blockads-compiler-container" });
+      return Response.json({ status: "ok", service: "blockads-compiler-container", version: "1.0.1" });
     }
 
     try {
