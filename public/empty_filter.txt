@@ -1,0 +1,3 @@
+[Adblock Plus 2.0]
+! Title: Test Empty Filter
+! Description: This filter list has headers but no rules to test error notification
