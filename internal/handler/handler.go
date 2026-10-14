@@ -19,6 +19,7 @@ import (
 	"blockads-filtering/internal/compiler"
 	"blockads-filtering/internal/config"
 	"blockads-filtering/internal/model"
+	"blockads-filtering/internal/notifier"
 	"blockads-filtering/internal/storage"
 	"blockads-filtering/internal/store"
 
@@ -27,14 +28,15 @@ import (
 
 // BuildHandler processes filter list build requests.
 type BuildHandler struct {
-	db  *store.Postgres
-	r2  *storage.R2Client
-	cfg *config.Config
+	db       *store.Postgres
+	r2       *storage.R2Client
+	cfg      *config.Config
+	notifier *notifier.Notifier
 }
 
 // NewBuildHandler creates a new BuildHandler with all dependencies injected.
-func NewBuildHandler(db *store.Postgres, r2 *storage.R2Client, cfg *config.Config) *BuildHandler {
-	return &BuildHandler{db: db, r2: r2, cfg: cfg}
+func NewBuildHandler(db *store.Postgres, r2 *storage.R2Client, cfg *config.Config, notif *notifier.Notifier) *BuildHandler {
+	return &BuildHandler{db: db, r2: r2, cfg: cfg, notifier: notif}
 }
 
 // TokenAuthMiddleware returns a Gin middleware that validates Authorization: Bearer <token>.
@@ -149,6 +151,9 @@ func (h *BuildHandler) Build(c *gin.Context) {
 	log.Printf("[API] Starting compilation for '%s' (derived from URL)", name)
 	result, err := compiler.CompileFilterList(name, req.URL)
 	if err != nil {
+		if h.notifier != nil {
+			h.notifier.NotifyBuildFailure(req.URL, "Compilation failed: "+err.Error())
+		}
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Status:  "error",
 			Message: "Compilation failed: " + err.Error(),
@@ -163,6 +168,9 @@ func (h *BuildHandler) Build(c *gin.Context) {
 
 	downloadURL, err := h.r2.UploadZip(ctx, name, result.ZipData)
 	if err != nil {
+		if h.notifier != nil {
+			h.notifier.NotifyBuildFailure(req.URL, "R2 upload failed: "+err.Error())
+		}
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Status:  "error",
 			Message: "R2 upload failed: " + err.Error(),
@@ -230,6 +238,9 @@ func (h *BuildHandler) RebuildAll(c *gin.Context) {
 			result, err := compiler.CompileFilterList(filter.Name, filter.URL)
 			if err != nil {
 				log.Printf("[API RebuildAll] Compilation failed for %s: %v", filter.URL, err)
+				if h.notifier != nil {
+					h.notifier.NotifyBuildFailure(filter.URL, "[RebuildAll] Compilation failed: "+err.Error())
+				}
 				_ = h.db.DeleteFilterByURL(bgCtx, filter.URL)
 				log.Printf("[API RebuildAll] Removed failed filter %s from DB", filter.URL)
 				continue
@@ -241,6 +252,9 @@ func (h *BuildHandler) RebuildAll(c *gin.Context) {
 			uploadCancel()
 			if err != nil {
 				log.Printf("[API RebuildAll] R2 upload failed for %s: %v", filter.URL, err)
+				if h.notifier != nil {
+					h.notifier.NotifyBuildFailure(filter.URL, "[RebuildAll] R2 upload failed: "+err.Error())
+				}
 				_ = h.db.DeleteFilterByURL(bgCtx, filter.URL)
 				log.Printf("[API RebuildAll] Removed failed filter %s from DB", filter.URL)
 				continue

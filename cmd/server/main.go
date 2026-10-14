@@ -14,6 +14,7 @@ import (
 
 	"blockads-filtering/internal/config"
 	"blockads-filtering/internal/handler"
+	"blockads-filtering/internal/notifier"
 	"blockads-filtering/internal/storage"
 	"blockads-filtering/internal/store"
 
@@ -47,7 +48,13 @@ func main() {
 	}
 	log.Printf("✓ R2 client ready (bucket: %s)", cfg.R2BucketName)
 
-	// ── 4. Set up Gin router ──
+	// ── 4. Initialize Notifier ──
+	notif := notifier.New(cfg.TelegramBotToken, cfg.TelegramChatID)
+	if cfg.TelegramBotToken != "" && cfg.TelegramChatID != "" {
+		log.Println("✓ Telegram alerting enabled")
+	}
+
+	// ── 5. Set up Gin router ──
 	if cfg.Environment == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -74,7 +81,7 @@ func main() {
 	})
 
 	// API routes
-	h := handler.NewBuildHandler(db, r2, cfg)
+	h := handler.NewBuildHandler(db, r2, cfg, notif)
 	api := router.Group("/api")
 	{
 		api.POST("/build", h.Build)

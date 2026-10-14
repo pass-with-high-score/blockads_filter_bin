@@ -31,6 +31,10 @@ type Config struct {
 	// Compilation
 	MaxConcurrency int
 	TempDir        string
+
+	// Notifications
+	TelegramBotToken string
+	TelegramChatID   string
 }
 
 // Load reads configuration from a .env file (if present) and environment variables.
@@ -56,6 +60,9 @@ func Load() *Config {
 
 		MaxConcurrency: 4,
 		TempDir:        getEnv("TEMP_DIR", os.TempDir()),
+
+		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:   getEnv("TELEGRAM_CHAT_ID", ""),
 	}
 }
 

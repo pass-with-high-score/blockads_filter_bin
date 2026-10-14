@@ -12,6 +12,8 @@ export interface Env {
   R2_SECRET_ACCESS_KEY?: string;
   R2_BUCKET_NAME?: string;
   R2_PUBLIC_URL?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
 }
 
 export class CompilerContainer extends Container<Env> {
@@ -30,6 +32,8 @@ export class CompilerContainer extends Container<Env> {
       R2_PUBLIC_URL: env.R2_PUBLIC_URL || "https://filter.pwhs.app",
       PORT: "8080",
       ENVIRONMENT: "production",
+      TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN || "",
+      TELEGRAM_CHAT_ID: env.TELEGRAM_CHAT_ID || "",
     };
   }
 }

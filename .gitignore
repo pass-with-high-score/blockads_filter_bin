@@ -23,7 +23,7 @@ next-env.d.ts
 # Go Binaries and build artifacts
 blockads-filtering
 bin/
-server
+/server
 tmp/
 
 # Environment
