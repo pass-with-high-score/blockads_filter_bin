@@ -1,0 +1,30 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "blockads-doh",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-05",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "routes": [
+    {
+      "pattern": "dns.pwhs.app",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "UPSTREAM_DOH": "https://1.1.1.1/dns-query",
+    "BLOCK_MODE": "zero",
+    "CACHE_TTL": "300",
+    "DEFAULT_BLOCKLIST_URL": "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts"
+  },
+  "r2_buckets": [
+    {
+      "binding": "R2_BUCKET",
+      "bucket_name": "blockads-filters"
+    }
+  ]
+}

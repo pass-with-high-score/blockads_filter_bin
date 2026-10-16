@@ -1,0 +1,18 @@
+{
+  "name": "blockads-doh",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BlockAds Private Serverless DNS-over-HTTPS (DoH) with Edge Adblocking",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "node test-doh.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241022.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^3.90.0"
+  }
+}
