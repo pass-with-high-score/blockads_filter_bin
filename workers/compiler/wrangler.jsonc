@@ -14,7 +14,7 @@
       "class_name": "CompilerContainer",
       "image": "registry.cloudflare.com/9daa44579604e972e3ca21aa980a92d7/blockads-compiler:v1",
       "instance_type": "standard-1",
-      "max_instances": 5
+      "max_instances": 1
     }
   ],
   "durable_objects": {

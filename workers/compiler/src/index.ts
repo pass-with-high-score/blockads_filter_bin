@@ -19,7 +19,7 @@ export interface Env {
 export class CompilerContainer extends Container<Env> {
   defaultPort = 8080;
   enableInternet = true;
-  sleepAfter = "10m";
+  sleepAfter = "30s";
 
   constructor(ctx: any, env: Env) {
     super(ctx, env);
