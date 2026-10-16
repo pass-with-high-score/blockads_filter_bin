@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"blockads-filtering/internal/model"
@@ -57,15 +58,26 @@ var ErrNoRulesFound = fmt.Errorf("no domains, CSS rules, or scriptlets found in 
 // into .trie, .bloom, .css, and info.json, then packages everything into a
 // zip archive returned as a byte slice. All processing is streaming/line-by-line.
 func CompileFilterList(name, url string) (*CompileResult, error) {
-	startTime := time.Now()
-	log.Printf("[%s] ▶ Starting compilation: %s", name, url)
+	return CompileMultipleFilterLists(name, []string{url})
+}
 
-	// ── Step 1: Download and parse domains + CSS + scriptlet rules (streaming) ──
-	domains, cssRules, scriptlets, err := downloadAndParseDomains(url)
+// CompileMultipleFilterLists downloads multiple filter lists concurrently,
+// deduplicates domains, CSS rules, and scriptlets, and compiles them into a
+// single unified .zip package.
+func CompileMultipleFilterLists(name string, urls []string) (*CompileResult, error) {
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("no filter list URLs provided")
+	}
+
+	startTime := time.Now()
+	log.Printf("[%s] ▶ Starting compilation of %d list(s): %s", name, len(urls), strings.Join(urls, ", "))
+
+	// ── Step 1: Download and parse domains + CSS + scriptlet rules (concurrent & streaming) ──
+	domains, cssRules, scriptlets, err := downloadAndParseMultipleDomains(urls)
 	if err != nil {
 		return nil, fmt.Errorf("download/parse failed: %w", err)
 	}
-	log.Printf("[%s] ✓ Parsed %d domains, %d CSS rules, %d scriptlets (%.2fs)",
+	log.Printf("[%s] ✓ Parsed %d unique domains, %d CSS rules, %d scriptlets (%.2fs)",
 		name, len(domains), len(cssRules), len(scriptlets), time.Since(startTime).Seconds())
 
 	if len(domains) == 0 && len(cssRules) == 0 && len(scriptlets) == 0 {
@@ -119,9 +131,13 @@ func CompileFilterList(name, url string) (*CompileResult, error) {
 	}
 
 	// ── Step 5: Build info.json ──
+	sourceURL := urls[0]
+	if len(urls) > 1 {
+		sourceURL = strings.Join(urls, ", ")
+	}
 	info := model.InfoJSON{
 		Name:      name,
-		URL:       url,
+		URL:       sourceURL,
 		RuleCount: len(domains),
 		UpdatedAt: time.Now().UTC(),
 	}
@@ -147,34 +163,205 @@ func CompileFilterList(name, url string) (*CompileResult, error) {
 	}, nil
 }
 
+// CombineFilterLists merges multiple filter lists into a single plain-text filter subscription.
+// Format options:
+// - "adblock" (default): Adblock Plus syntax with ||domain^, ##css, and scriptlets
+// - "domains": Plain list of unique domains (one per line)
+// - "hosts": Standard /etc/hosts format (0.0.0.0 domain)
+func CombineFilterLists(urls []string, format string) ([]byte, int, error) {
+	if len(urls) == 0 {
+		return nil, 0, fmt.Errorf("no filter list URLs provided")
+	}
+
+	domains, cssRules, scriptlets, err := downloadAndParseMultipleDomains(urls)
+	if err != nil {
+		return nil, 0, fmt.Errorf("download/parse failed: %w", err)
+	}
+
+	totalRules := len(domains) + len(cssRules) + len(scriptlets)
+	if totalRules == 0 {
+		return nil, 0, ErrNoRulesFound
+	}
+
+	var buf bytes.Buffer
+	nowStr := time.Now().UTC().Format(time.RFC3339)
+
+	switch strings.ToLower(format) {
+	case "domains":
+		for _, domain := range domains {
+			buf.WriteString(domain)
+			buf.WriteByte('\n')
+		}
+		return buf.Bytes(), len(domains), nil
+
+	case "hosts":
+		buf.WriteString("# BlockAds Combined Hosts\n")
+		buf.WriteString(fmt.Sprintf("# Updated: %s\n", nowStr))
+		buf.WriteString(fmt.Sprintf("# Total Entries: %d\n\n", len(domains)))
+		for _, domain := range domains {
+			buf.WriteString("0.0.0.0 ")
+			buf.WriteString(domain)
+			buf.WriteByte('\n')
+		}
+		return buf.Bytes(), len(domains), nil
+
+	case "adblock", "":
+		buf.WriteString("[Adblock Plus 2.0]\n")
+		buf.WriteString("! Title: BlockAds Combined Filter\n")
+		buf.WriteString(fmt.Sprintf("! Last modified: %s\n", nowStr))
+		buf.WriteString(fmt.Sprintf("! Total Rules: %d (Domains: %d, CSS: %d, Scriptlets: %d)\n",
+			totalRules, len(domains), len(cssRules), len(scriptlets)))
+		buf.WriteString("! Sources:\n")
+		for _, u := range urls {
+			buf.WriteString(fmt.Sprintf("! - %s\n", u))
+		}
+		buf.WriteString("!\n")
+
+		if len(domains) > 0 {
+			buf.WriteString("! === Network Domain Rules ===\n")
+			for _, domain := range domains {
+				buf.WriteString("||")
+				buf.WriteString(domain)
+				buf.WriteString("^\n")
+			}
+			buf.WriteString("\n")
+		}
+
+		if len(cssRules) > 0 {
+			buf.WriteString("! === Cosmetic Element Hiding ===\n")
+			for _, css := range cssRules {
+				buf.WriteString("##")
+				buf.WriteString(css)
+				buf.WriteByte('\n')
+			}
+			buf.WriteString("\n")
+		}
+
+		if len(scriptlets) > 0 {
+			buf.WriteString("! === Scriptlet Rules ===\n")
+			for _, sc := range scriptlets {
+				buf.WriteString(sc)
+				buf.WriteByte('\n')
+			}
+			buf.WriteString("\n")
+		}
+
+		return buf.Bytes(), totalRules, nil
+
+	default:
+		return nil, 0, fmt.Errorf("unsupported format '%s' (allowed: adblock, domains, hosts)", format)
+	}
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Domain Parser (streaming, line-by-line)
 // ────────────────────────────────────────────────────────────────────────────
 
-// downloadAndParseDomains streams a filter list and extracts unique domains,
-// cosmetic CSS rules, and scriptlet (##+js) rules. Uses bufio.Scanner for memory efficiency.
+// downloadAndParseDomains streams a single filter list and extracts unique domains,
+// cosmetic CSS rules, and scriptlet rules.
 func downloadAndParseDomains(url string) ([]string, []string, []string, error) {
-	client := &http.Client{Timeout: 90 * time.Second}
+	return downloadAndParseMultipleDomains([]string{url})
+}
 
-	resp, err := client.Get(url)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("HTTP GET %s: %w", url, err)
+// downloadAndParseMultipleDomains concurrently downloads and parses multiple filter lists,
+// deduplicating domains, CSS rules, and scriptlets across all sources.
+func downloadAndParseMultipleDomains(urls []string) ([]string, []string, []string, error) {
+	if len(urls) == 0 {
+		return nil, nil, nil, nil
 	}
-	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, nil, nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
+	type parseResult struct {
+		url        string
+		domains    []string
+		cssRules   []string
+		scriptlets []string
+		err        error
 	}
+
+	resultsChan := make(chan parseResult, len(urls))
+	concurrencyLimit := 5
+	sem := make(chan struct{}, concurrencyLimit)
+	var wg sync.WaitGroup
+
+	for _, u := range urls {
+		wg.Add(1)
+		go func(targetURL string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			d, c, s, err := fetchAndParseSingle(targetURL)
+			resultsChan <- parseResult{
+				url:        targetURL,
+				domains:    d,
+				cssRules:   c,
+				scriptlets: s,
+				err:        err,
+			}
+		}(u)
+	}
+
+	wg.Wait()
+	close(resultsChan)
 
 	seenDomains := make(map[string]struct{})
 	seenCSS := make(map[string]struct{})
 	seenScriptlets := make(map[string]struct{})
+
+	var allDomains []string
+	var allCSS []string
+	var allScriptlets []string
+
+	for res := range resultsChan {
+		if res.err != nil {
+			return nil, nil, nil, fmt.Errorf("error fetching %s: %w", res.url, res.err)
+		}
+
+		for _, d := range res.domains {
+			if _, exists := seenDomains[d]; !exists {
+				seenDomains[d] = struct{}{}
+				allDomains = append(allDomains, d)
+			}
+		}
+
+		for _, c := range res.cssRules {
+			if _, exists := seenCSS[c]; !exists {
+				seenCSS[c] = struct{}{}
+				allCSS = append(allCSS, c)
+			}
+		}
+
+		for _, s := range res.scriptlets {
+			if _, exists := seenScriptlets[s]; !exists {
+				seenScriptlets[s] = struct{}{}
+				allScriptlets = append(allScriptlets, s)
+			}
+		}
+	}
+
+	sort.Strings(allScriptlets)
+	return allDomains, allCSS, allScriptlets, nil
+}
+
+// fetchAndParseSingle downloads a single URL and parses domains, CSS rules, and scriptlets.
+func fetchAndParseSingle(url string) ([]string, []string, []string, error) {
+	client := &http.Client{Timeout: 90 * time.Second}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("HTTP GET: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
 	var domains []string
 	var cssRules []string
 	var scriptlets []string
 
 	scanner := bufio.NewScanner(resp.Body)
-	// Increase buffer for very long lines (some filter lists have them)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	for scanner.Scan() {
@@ -185,47 +372,32 @@ func downloadAndParseDomains(url string) ([]string, []string, []string, error) {
 			continue
 		}
 
-		// 2. Extract Scriptlet Rules — kept as raw filter-list lines. Both dialects:
-		//   uBlock:  domain##+js(name, args)
-		//   AdGuard: domain#%#//scriptlet('name', 'args')
+		// 2. Extract Scriptlet Rules
 		if strings.Contains(rawLine, "##+js(") || strings.Contains(rawLine, "#%#//scriptlet(") {
-			if _, exists := seenScriptlets[rawLine]; !exists {
-				seenScriptlets[rawLine] = struct{}{}
-				scriptlets = append(scriptlets, rawLine)
-			}
+			scriptlets = append(scriptlets, rawLine)
 			continue
 		}
 
-		// 3. Extract Generic Cosmetic CSS Rules (strip leading ## to produce valid selectors)
+		// 3. Extract Generic Cosmetic CSS Rules
 		if strings.HasPrefix(rawLine, "##") &&
 			!strings.Contains(rawLine, "##+js") &&
 			!strings.Contains(rawLine, "##^") {
 			selector := strings.TrimPrefix(rawLine, "##")
 			if selector != "" {
-				if _, exists := seenCSS[selector]; !exists {
-					seenCSS[selector] = struct{}{}
-					cssRules = append(cssRules, selector)
-				}
+				cssRules = append(cssRules, selector)
 			}
 			continue
 		}
 
-		// 2. Extract Domains
+		// 4. Extract Domains
 		domain := parseDomainLine(rawLine)
-		if domain == "" {
-			continue
-		}
-		if _, exists := seenDomains[domain]; !exists {
-			seenDomains[domain] = struct{}{}
+		if domain != "" {
 			domains = append(domains, domain)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, nil, nil, fmt.Errorf("scanning response from %s: %w", url, err)
+		return nil, nil, nil, fmt.Errorf("scanning response: %w", err)
 	}
-
-	// Sort scriptlets for deterministic output (matches `sort -u` semantics).
-	sort.Strings(scriptlets)
 
 	return domains, cssRules, scriptlets, nil
 }

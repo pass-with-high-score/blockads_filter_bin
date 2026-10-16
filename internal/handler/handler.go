@@ -92,8 +92,10 @@ func TokenAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 // Request Body:
 //
 //	{"url": "https://example.com/filter.txt"}
+//	OR
+//	{"urls": ["https://example.com/filter1.txt", "https://example.com/filter2.txt"], "name": "my_combined"}
 //
-// Name is auto-derived from the URL.
+// Name is auto-derived from the URL(s) if not specified.
 //
 // Response:
 //
@@ -109,13 +111,41 @@ func (h *BuildHandler) Build(c *gin.Context) {
 		return
 	}
 
+	urls := req.URLs
+	if len(urls) == 0 && req.URL != "" {
+		urls = []string{req.URL}
+	}
+
+	var cleanURLs []string
+	for _, u := range urls {
+		u = strings.TrimSpace(u)
+		if u != "" {
+			cleanURLs = append(cleanURLs, u)
+		}
+	}
+
+	if len(cleanURLs) == 0 {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "No filter list URL(s) provided",
+		})
+		return
+	}
+
+	var compositeURL string
+	if len(cleanURLs) == 1 {
+		compositeURL = cleanURLs[0]
+	} else {
+		compositeURL = strings.Join(cleanURLs, ",")
+	}
+
 	// ── Check if URL already exists in the database ──
 	// Skip re-compilation unless ?force=true is set
 	forceRebuild := strings.EqualFold(c.Query("force"), "true")
 	if !forceRebuild {
-		existing, err := h.db.GetFilterByURL(c.Request.Context(), req.URL)
+		existing, err := h.db.GetFilterByURL(c.Request.Context(), compositeURL)
 		if err == nil && existing != nil {
-			log.Printf("[API] URL already exists in DB: %s (id=%d), returning existing record", req.URL, existing.ID)
+			log.Printf("[API] URL already exists in DB: %s (id=%d), returning existing record", compositeURL, existing.ID)
 			c.JSON(http.StatusOK, model.BuildResponse{
 				Status:      "success",
 				DownloadURL: existing.R2DownloadLink,
@@ -126,31 +156,46 @@ func (h *BuildHandler) Build(c *gin.Context) {
 		}
 	}
 
-	// Derive name from the URL
-	name := deriveNameFromURL(req.URL)
-	name = sanitizeName(name)
+	// Derive name from URL(s) or custom provided name
+	var name string
+	if req.Name != "" {
+		name = sanitizeName(req.Name)
+	} else if len(cleanURLs) == 1 {
+		name = deriveNameFromURL(cleanURLs[0])
+		name = sanitizeName(name)
+	} else {
+		hasher := sha256.New()
+		for _, u := range cleanURLs {
+			hasher.Write([]byte(u))
+		}
+		hashStr := hex.EncodeToString(hasher.Sum(nil))[:8]
+		baseName := sanitizeName(deriveNameFromURL(cleanURLs[0]))
+		name = fmt.Sprintf("merged_%s_%s", baseName, hashStr)
+	}
 
 	if name == "" {
 		c.JSON(http.StatusBadRequest, model.ErrorResponse{
 			Status:  "error",
-			Message: "Could not derive a valid name from the provided URL",
+			Message: "Could not derive a valid name from the provided URL(s)",
 		})
 		return
 	}
 
-	// ── Validate URL is reachable ──
-	log.Printf("[API] Validating URL: %s", req.URL)
-	if err := compiler.ValidateFilterListURL(req.URL); err != nil {
-		c.JSON(http.StatusBadRequest, model.ErrorResponse{
-			Status:  "error",
-			Message: "URL validation failed: " + err.Error(),
-		})
-		return
+	// ── Validate all URLs are reachable ──
+	for _, u := range cleanURLs {
+		log.Printf("[API] Validating URL: %s", u)
+		if err := compiler.ValidateFilterListURL(u); err != nil {
+			c.JSON(http.StatusBadRequest, model.ErrorResponse{
+				Status:  "error",
+				Message: fmt.Sprintf("URL validation failed for %s: %s", u, err.Error()),
+			})
+			return
+		}
 	}
 
-	// ── Compile the filter list ──
-	log.Printf("[API] Starting compilation for '%s' (derived from URL)", name)
-	result, err := compiler.CompileFilterList(name, req.URL)
+	// ── Compile the filter list(s) ──
+	log.Printf("[API] Starting compilation for '%s' (%d URL(s))", name, len(cleanURLs))
+	result, err := compiler.CompileMultipleFilterLists(name, cleanURLs)
 	if err != nil {
 		if errors.Is(err, compiler.ErrNoRulesFound) {
 			c.JSON(http.StatusBadRequest, model.ErrorResponse{
@@ -160,7 +205,7 @@ func (h *BuildHandler) Build(c *gin.Context) {
 			return
 		}
 		if h.notifier != nil {
-			h.notifier.NotifyBuildFailure(req.URL, "Compilation failed: "+err.Error())
+			h.notifier.NotifyBuildFailure(compositeURL, "Compilation failed: "+err.Error())
 		}
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Status:  "error",
@@ -177,7 +222,7 @@ func (h *BuildHandler) Build(c *gin.Context) {
 	downloadURL, err := h.r2.UploadZip(ctx, name, result.ZipData)
 	if err != nil {
 		if h.notifier != nil {
-			h.notifier.NotifyBuildFailure(req.URL, "R2 upload failed: "+err.Error())
+			h.notifier.NotifyBuildFailure(compositeURL, "R2 upload failed: "+err.Error())
 		}
 		c.JSON(http.StatusInternalServerError, model.ErrorResponse{
 			Status:  "error",
@@ -191,10 +236,10 @@ func (h *BuildHandler) Build(c *gin.Context) {
 
 	log.Printf("[API] ✓ Uploaded to R2: %s", downloadURL)
 
-	// ── Save/update record in PostgreSQL (keyed by URL) ──
+	// ── Save/update record in PostgreSQL (keyed by compositeURL) ──
 	filter := &model.FilterList{
 		Name:           name,
-		URL:            req.URL,
+		URL:            compositeURL,
 		R2DownloadLink: downloadURL,
 		RuleCount:      result.RuleCount,
 		FileSize:       result.FileSize,
@@ -203,7 +248,7 @@ func (h *BuildHandler) Build(c *gin.Context) {
 		log.Printf("[API] ⚠ DB upsert failed (upload succeeded): %v", err)
 		// Still return success since the upload worked
 	}
-	log.Printf("[API] ✓ DB record upserted: url=%s (id=%d)", req.URL, filter.ID)
+	log.Printf("[API] ✓ DB record upserted: url=%s (id=%d)", compositeURL, filter.ID)
 
 	// ── Return success response ──
 	c.JSON(http.StatusOK, model.BuildResponse{
@@ -212,6 +257,81 @@ func (h *BuildHandler) Build(c *gin.Context) {
 		RuleCount:   result.RuleCount,
 		FileSize:    result.FileSize,
 	})
+}
+
+// Combine handles GET & POST /api/combine
+// Merges multiple filter lists into plain-text adblock, domains, or hosts format.
+// Query parameters (GET) or JSON body (POST):
+// - urls: list of URLs (comma-separated for GET or string[] for POST)
+// - format: "adblock" (default), "domains", or "hosts"
+func (h *BuildHandler) Combine(c *gin.Context) {
+	var urls []string
+	var format string
+
+	if c.Request.Method == http.MethodGet {
+		rawURLs := c.Query("urls")
+		if rawURLs != "" {
+			for _, u := range strings.Split(rawURLs, ",") {
+				if trimmed := strings.TrimSpace(u); trimmed != "" {
+					urls = append(urls, trimmed)
+				}
+			}
+		}
+		if singleURL := strings.TrimSpace(c.Query("url")); singleURL != "" {
+			urls = append(urls, singleURL)
+		}
+		format = c.DefaultQuery("format", "adblock")
+	} else {
+		var req model.CombineRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, model.ErrorResponse{
+				Status:  "error",
+				Message: "Invalid request body: " + err.Error(),
+			})
+			return
+		}
+		urls = req.URLs
+		if len(urls) == 0 && req.URL != "" {
+			urls = []string{req.URL}
+		}
+		format = req.Format
+	}
+
+	var cleanURLs []string
+	for _, u := range urls {
+		if trimmed := strings.TrimSpace(u); trimmed != "" {
+			cleanURLs = append(cleanURLs, trimmed)
+		}
+	}
+
+	if len(cleanURLs) == 0 {
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "No filter list URL(s) provided. Use ?urls=url1,url2 or send JSON { \"urls\": [\"...\"] }",
+		})
+		return
+	}
+
+	data, ruleCount, err := compiler.CombineFilterLists(cleanURLs, format)
+	if err != nil {
+		if errors.Is(err, compiler.ErrNoRulesFound) {
+			c.JSON(http.StatusBadRequest, model.ErrorResponse{
+				Status:  "error",
+				Message: "No rules found in provided filter lists",
+			})
+			return
+		}
+		c.JSON(http.StatusBadRequest, model.ErrorResponse{
+			Status:  "error",
+			Message: "Failed to combine filter lists: " + err.Error(),
+		})
+		return
+	}
+
+	c.Header("Content-Type", "text/plain; charset=utf-8")
+	c.Header("Cache-Control", "public, max-age=3600")
+	c.Header("X-Rule-Count", strconv.Itoa(ruleCount))
+	c.String(http.StatusOK, string(data))
 }
 
 // RebuildAll handles POST /api/filters/rebuild-all — triggers asynchronous rebuilds of all stored filters.

@@ -1,6 +1,11 @@
 package compiler
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 func TestParseDomainLine(t *testing.T) {
 	tests := []struct {
@@ -54,3 +59,87 @@ func TestParseDomainLine(t *testing.T) {
 		}
 	}
 }
+
+func TestCombineAndCompileMultipleFilterLists(t *testing.T) {
+	// Setup 2 mock filter list servers
+	list1Content := `! List 1
+||ads.example.com^
+0.0.0.0 tracker.com
+##.ad-banner
+domain1.com##+js(set-constant, foo, false)
+`
+	list2Content := `! List 2
+||analytics.example.com^
+0.0.0.0 tracker.com # duplicate
+##.ad-banner
+##.sponsored-post
+domain2.com##+js(abort-on-property-read, bar)
+`
+
+	var server1, server2 *httptest.Server
+	server1 = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(list1Content))
+	}))
+	defer server1.Close()
+
+	server2 = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(list2Content))
+	}))
+	defer server2.Close()
+
+	urls := []string{server1.URL, server2.URL}
+
+	// Test CombineFilterLists: "domains"
+	domBytes, count, err := CombineFilterLists(urls, "domains")
+	if err != nil {
+		t.Fatalf("CombineFilterLists(domains) failed: %v", err)
+	}
+	if count != 3 { // ads.example.com, tracker.com, analytics.example.com
+		t.Errorf("Expected 3 unique domains, got %d", count)
+	}
+	domStr := string(domBytes)
+	if !strings.Contains(domStr, "ads.example.com") || !strings.Contains(domStr, "tracker.com") || !strings.Contains(domStr, "analytics.example.com") {
+		t.Errorf("domains output missing expected domains: %s", domStr)
+	}
+
+	// Test CombineFilterLists: "adblock"
+	abpBytes, abpCount, err := CombineFilterLists(urls, "adblock")
+	if err != nil {
+		t.Fatalf("CombineFilterLists(adblock) failed: %v", err)
+	}
+	if abpCount != 7 { // 3 domains + 2 css + 2 scriptlets
+		t.Errorf("Expected 7 total rules, got %d", abpCount)
+	}
+	abpStr := string(abpBytes)
+	if !strings.Contains(abpStr, "[Adblock Plus 2.0]") || !strings.Contains(abpStr, "||ads.example.com^") || !strings.Contains(abpStr, "##.sponsored-post") {
+		t.Errorf("adblock output missing expected content: %s", abpStr)
+	}
+
+	// Test CombineFilterLists: "hosts"
+	hostsBytes, hostsCount, err := CombineFilterLists(urls, "hosts")
+	if err != nil {
+		t.Fatalf("CombineFilterLists(hosts) failed: %v", err)
+	}
+	if hostsCount != 3 {
+		t.Errorf("Expected 3 domains in hosts format, got %d", hostsCount)
+	}
+	hostsStr := string(hostsBytes)
+	if !strings.Contains(hostsStr, "0.0.0.0 ads.example.com") {
+		t.Errorf("hosts output missing 0.0.0.0 entry: %s", hostsStr)
+	}
+
+	// Test CompileMultipleFilterLists (zip archive generation)
+	res, err := CompileMultipleFilterLists("merged_test", urls)
+	if err != nil {
+		t.Fatalf("CompileMultipleFilterLists failed: %v", err)
+	}
+	if res.RuleCount != 3 {
+		t.Errorf("Expected 3 domain rules, got %d", res.RuleCount)
+	}
+	if len(res.ZipData) == 0 {
+		t.Errorf("Expected non-empty zip data")
+	}
+}
+

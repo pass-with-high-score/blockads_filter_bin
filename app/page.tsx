@@ -16,10 +16,10 @@ export default function CompilerPage() {
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-[#00E676]/20 blur-[80px] rounded-full point-events-none" />
           
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-gray-900 relative z-10">
-            Filter <span className="text-[#00E676]">Compiler</span>
+            Filter <span className="text-[#00E676]">Compiler & Merger</span>
           </h1>
           <p className="text-lg text-gray-600 max-w-2xl mx-auto relative z-10">
-            Convert standard filter blocklists (e.g., EasyList, ADGuard) into highly-optimized binary formats designed exclusively for the BlockAds DNS Engine.
+            Convert standard filter blocklists (EasyList, AdGuard, Hosts) into highly-optimized binary packages for BlockAds, or merge multiple filter lists into a unified clean subscription.
           </p>
         </div>
 
@@ -27,9 +27,9 @@ export default function CompilerPage() {
           {/* Build Form */}
           <section className="bg-white/80 backdrop-blur-xl border border-gray-200/60 p-6 md:p-8 rounded-3xl shadow-sm">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Build Filter</h2>
+              <h2 className="text-2xl font-bold text-gray-900">Build & Merge Filters</h2>
               <p className="text-sm text-gray-500 mt-1 mb-2">
-                Provide a raw filter list URL to queue for compiling. If the URL hasn't been compiled recently, the engine will download it, parse the rules, generate the binary trees, and bundle them into a zip file on Cloudflare R2.
+                Compile one or multiple filter lists into a single deduplicated BlockAds binary package (.zip), or merge them into a live plain-text subscription URL.
               </p>
             </div>
             <CompilerForm />

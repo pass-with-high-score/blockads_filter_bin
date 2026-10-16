@@ -31,17 +31,28 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
-    const { url } = body;
+    let { url, urls, name: customName } = body;
 
-    if (!url || typeof url !== "string") {
+    if (Array.isArray(urls)) {
+      urls = urls.map((u: any) => (typeof u === "string" ? u.trim() : "")).filter(Boolean);
+    } else {
+      urls = [];
+    }
+
+    if (!url && urls.length > 0) {
+      url = urls[0];
+    }
+
+    if (!url && urls.length === 0) {
       return addCors(NextResponse.json(
-        { status: "error", message: "URL is required and must be a string" },
+        { status: "error", message: "Either 'url' (string) or 'urls' (string[]) is required" },
         { status: 400 }
       ));
     }
 
     const { searchParams } = new URL(req.url);
     const forceRebuild = searchParams.get("force") === "true";
+    const cacheKey = urls.length > 1 ? urls.join(",") : url;
 
     // ── 1. Check database cache ──
     if (!forceRebuild) {
@@ -49,9 +60,9 @@ export async function POST(req: NextRequest) {
         const timeoutPromise = new Promise<null>((_, reject) =>
           setTimeout(() => reject(new Error("DB cache check timed out")), 3000)
         );
-        const existing = await Promise.race([getFilterByUrl(url), timeoutPromise]);
+        const existing = await Promise.race([getFilterByUrl(cacheKey), timeoutPromise]);
         if (existing) {
-          console.log(`[API] Returning cached filter for: ${url}`);
+          console.log(`[API] Returning cached filter for: ${cacheKey}`);
           return addCors(NextResponse.json({
             status: "success",
             downloadUrl: existing.r2DownloadLink,
@@ -64,27 +75,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 2. Validate URL syntax & reachability ──
-    console.log(`[API] Validating URL: ${url}`);
-    try {
-      await validateFilterListURL(url);
-    } catch (err: any) {
-      return addCors(NextResponse.json(
-        { status: "error", message: `URL validation failed: ${err.message}` },
-        { status: 400 }
-      ));
-    }
-
-    const rawName = deriveNameFromURL(url);
-    const name = sanitizeName(rawName);
-    if (!name) {
-      return addCors(NextResponse.json(
-        { status: "error", message: "Could not derive a valid name from the provided URL" },
-        { status: 400 }
-      ));
-    }
-
-    // ── 3. Delegate to Go Container Worker (via Service Binding) ──
+    // ── 2. Delegate to Go Container Worker (via Service Binding) ──
+    const payload = JSON.stringify({ url, urls, name: customName });
     let compilerService: any = null;
     try {
       const ctx = getCloudflareContext();
@@ -92,14 +84,14 @@ export async function POST(req: NextRequest) {
     } catch {}
 
     if (compilerService) {
-      console.log(`[API] 🚀 Delegating compilation to Cloudflare Go Container (Service Binding) for: ${url}`);
+      console.log(`[API] 🚀 Delegating compilation to Cloudflare Go Container (Service Binding)`);
       try {
         const targetUrl = new URL(req.url);
         targetUrl.pathname = "/api/build";
         const containerReq = new Request(targetUrl.toString(), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url }),
+          body: payload,
         });
         const containerResp = await compilerService.fetch(containerReq);
         const data = await containerResp.json();
@@ -109,13 +101,14 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 4. Fallback to direct Container Worker HTTP endpoint ──
+    // ── 3. Fallback to direct Container Worker HTTP endpoint ──
+    const containerBase = process.env.COMPILER_CONTAINER_URL || "https://complier.pwhs.app";
     try {
-      console.log(`[API] 🚀 Delegating compilation to Cloudflare Go Container (HTTP) for: ${url}`);
-      const containerResp = await fetch("https://blockads-compiler.nguyenquangminh623.workers.dev/api/build", {
+      console.log(`[API] 🚀 Delegating compilation to Cloudflare Go Container (HTTP: ${containerBase})`);
+      const containerResp = await fetch(`${containerBase}/api/build`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: payload,
       });
       const data = await containerResp.json();
       return addCors(NextResponse.json(data, { status: containerResp.status }));
@@ -123,7 +116,15 @@ export async function POST(req: NextRequest) {
       console.error(`[API] Container HTTP proxy failed, falling back to local JS compile:`, containerErr);
     }
 
-    // ── 5. Final fallback: local JS compilation (if container offline) ──
+    // ── 4. Final fallback: local JS compilation (single URL only) ──
+    const rawName = customName || deriveNameFromURL(url);
+    const name = sanitizeName(rawName);
+    if (!name) {
+      return addCors(NextResponse.json(
+        { status: "error", message: "Could not derive a valid name from the provided URL" },
+        { status: 400 }
+      ));
+    }
     console.log(`[API] Starting fallback JS compilation for '${name}'`);
     let result;
     try {

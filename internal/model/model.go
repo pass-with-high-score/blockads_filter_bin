@@ -24,9 +24,18 @@ type FilterList struct {
 // ────────────────────────────────────────────────────────────────────────────
 
 // BuildRequest is the JSON body for POST /api/build.
-// Name is auto-derived from the URL.
+// Supports either a single "url" or multiple "urls" to merge into a single filter.
 type BuildRequest struct {
-	URL string `json:"url" binding:"required,url"`
+	URL  string   `json:"url"`
+	URLs []string `json:"urls"`
+	Name string   `json:"name"`
+}
+
+// CombineRequest is the JSON body for POST /api/combine.
+type CombineRequest struct {
+	URLs   []string `json:"urls"`
+	URL    string   `json:"url"`
+	Format string   `json:"format"` // "adblock", "domains", "hosts"
 }
 
 // BuildResponse is the JSON response for a successful build.

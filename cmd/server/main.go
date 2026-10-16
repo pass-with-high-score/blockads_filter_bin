@@ -76,16 +76,21 @@ func main() {
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
-			"version": "1.0.2",
+			"version": "1.1.0",
 			"time":    time.Now().UTC(),
 		})
 	})
 
 	// API routes
 	h := handler.NewBuildHandler(db, r2, cfg, notif)
+	router.GET("/combine", h.Combine)
+	router.POST("/combine", h.Combine)
+
 	api := router.Group("/api")
 	{
 		api.POST("/build", h.Build)
+		api.GET("/combine", h.Combine)
+		api.POST("/combine", h.Combine)
 		api.POST("/filters/rebuild-all", handler.TokenAuthMiddleware(cfg), h.RebuildAll)
 		api.GET("/filters", h.ListFilters)
 		api.DELETE("/filters", handler.TokenAuthMiddleware(cfg), h.DeleteFilter)
