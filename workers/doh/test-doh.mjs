@@ -1,5 +1,11 @@
 import assert from "node:assert";
-import { parseDnsQuery, createBlockedResponse, DNS_TYPES } from "./src/dns.ts";
+import {
+  parseDnsQuery,
+  createBlockedResponse,
+  stripEcs,
+  replaceTransactionId,
+  DNS_TYPES,
+} from "./src/dns.ts";
 import { isDomainBlocked } from "./src/blocklist.ts";
 
 console.log("▶ Testing DoH DNS parser & blocklist...");
@@ -60,4 +66,42 @@ assert.strictEqual(nxView.getUint16(2), 0x8183, "NXDOMAIN Flags should be 0x8183
 assert.strictEqual(nxView.getUint16(6), 0, "ANCOUNT should be 0 for NXDOMAIN");
 console.log("✓ createBlockedResponse (nxdomain) returned valid NXDOMAIN response");
 
+// Test replaceTransactionId
+const replaced = replaceTransactionId(blockedZero, 0x5678);
+assert.strictEqual(new DataView(replaced.buffer).getUint16(0), 0x5678, "ID must be replaced to 0x5678");
+assert.strictEqual(new DataView(blockedZero.buffer).getUint16(0), 0x1234, "Original must remain untouched");
+console.log("✓ replaceTransactionId works for edge cache stamping");
+
+// Test stripEcs on packet with ECS Option
+// Add an OPT RR (type 41) with Option 8 (ECS) to queryPacket
+const ecsOption = [
+  0x00, 0x08, // Option Code: 8 (ECS)
+  0x00, 0x07, // Option Length: 7
+  0x00, 0x01, // Family: IPv4
+  0x18,       // Source prefix: 24
+  0x00,       // Scope prefix: 0
+  192, 168, 1 // Client Subnet IP
+];
+const optRr = [
+  0x00,       // Root name
+  0x00, 0x29, // Type: OPT (41)
+  0x10, 0x00, // UDP payload: 4096
+  0x00, 0x00, 0x00, 0x00, // Ext RCODE & flags
+  0x00, ecsOption.length, // RDLENGTH
+  ...ecsOption
+];
+
+const packetWithEcs = new Uint8Array(queryPacket.length + optRr.length);
+packetWithEcs.set(queryPacket);
+packetWithEcs.set(optRr, queryPacket.length);
+// Set ARCOUNT = 1 in header
+new DataView(packetWithEcs.buffer).setUint16(10, 1);
+
+assert.strictEqual(packetWithEcs.length, queryPacket.length + optRr.length);
+const stripped = stripEcs(packetWithEcs);
+assert.strictEqual(new DataView(stripped.buffer).getUint16(10), 0, "ARCOUNT should be 0 after stripping ECS");
+assert.strictEqual(stripped.length, queryPacket.length, "Packet should be truncated back to query length");
+console.log("✓ stripEcs successfully stripped client IP subnet");
+
 console.log("🎉 All DoH tests passed cleanly!");
+
