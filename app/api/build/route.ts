@@ -132,9 +132,12 @@ export async function POST(req: NextRequest) {
         throw new Error("No domain rules found in filter list");
       }
     } catch (err: any) {
+      const isClientError =
+        err.message?.includes("No domains, CSS rules, or scriptlets found") ||
+        err.message?.includes("No domain rules found");
       return addCors(NextResponse.json(
         { status: "error", message: `Compilation failed: ${err.message}` },
-        { status: 500 }
+        { status: isClientError ? 400 : 500 }
       ));
     }
 

@@ -50,6 +50,9 @@ type CompileResult struct {
 // Public API
 // ────────────────────────────────────────────────────────────────────────────
 
+// ErrNoRulesFound is returned when a filter list has no parsable domains, CSS rules, or scriptlets.
+var ErrNoRulesFound = fmt.Errorf("no domains, CSS rules, or scriptlets found in filter list")
+
 // CompileFilterList downloads a filter list from the given URL, compiles it
 // into .trie, .bloom, .css, and info.json, then packages everything into a
 // zip archive returned as a byte slice. All processing is streaming/line-by-line.
@@ -66,7 +69,7 @@ func CompileFilterList(name, url string) (*CompileResult, error) {
 		name, len(domains), len(cssRules), len(scriptlets), time.Since(startTime).Seconds())
 
 	if len(domains) == 0 && len(cssRules) == 0 && len(scriptlets) == 0 {
-		return nil, fmt.Errorf("no domains, CSS rules, or scriptlets found in filter list")
+		return nil, ErrNoRulesFound
 	}
 
 	// ── Step 2: Build Trie ──
@@ -228,7 +231,7 @@ func downloadAndParseDomains(url string) ([]string, []string, []string, error) {
 }
 
 // parseDomainLine extracts a domain from a single line of a filter list.
-// Handles hosts-file, AdBlock Plus, and plain domain formats.
+// Handles hosts-file, AdBlock Plus, wildcard, dnsmasq, and plain domain formats.
 func parseDomainLine(line string) string {
 	line = strings.TrimSpace(line)
 
@@ -246,15 +249,34 @@ func parseDomainLine(line string) string {
 		strings.Contains(line, "#$#") || strings.Contains(line, "#%#") {
 		return ""
 	}
+
+	// Support Wildcard domain format: *.example.com (HaGeZi wildcard, OISD domainswild)
+	if strings.HasPrefix(line, "*.") {
+		line = strings.TrimPrefix(line, "*.")
+	}
+
+	// dnsmasq format: server=/domain.com/ or address=/domain.com/0.0.0.0
+	if strings.HasPrefix(line, "server=/") || strings.HasPrefix(line, "address=/") {
+		clean := strings.TrimPrefix(strings.TrimPrefix(line, "server=/"), "address=/")
+		if slashIdx := strings.IndexByte(clean, '/'); slashIdx != -1 {
+			line = clean[:slashIdx]
+		}
+	}
+
 	if strings.ContainsAny(line, "$/\\*") && !strings.HasPrefix(line, "||") {
 		return ""
 	}
 
 	var domain string
+	isABP := strings.HasPrefix(line, "||")
 
 	switch {
-	case strings.HasPrefix(line, "||"):
+	case isABP:
 		domain = strings.TrimPrefix(line, "||")
+
+		// Handle wildcard prefixes: ||*.example.com^ or ||*.tld^
+		domain = strings.TrimPrefix(domain, "*.")
+		domain = strings.TrimPrefix(domain, "*")
 
 		// CRITICAL FIX: If the rule contains wildcards (*, ?) or paths (/), 
 		// it's a URL-level rule. A DNS-level blocker (BlockTrie) cannot handle this 
@@ -273,7 +295,10 @@ func parseDomainLine(line string) string {
 			// (e.g. ||youtube.com^$domain=sarapbabe.com would block YouTube entirely!).
 			for _, opt := range strings.Split(options, ",") {
 				opt = strings.TrimSpace(opt)
-				if opt == "" || opt == "important" || opt == "empty" || opt == "mp4" {
+				if opt == "" || opt == "important" || opt == "empty" || opt == "mp4" ||
+					opt == "all" || opt == "popup" || opt == "document" || opt == "doc" ||
+					opt == "dns" || strings.HasPrefix(opt, "dnstype") || opt == "cname" ||
+					opt == "network" || strings.HasPrefix(opt, "ctag") || strings.HasPrefix(opt, "denyallow") {
 					continue
 				}
 				return ""
@@ -313,9 +338,7 @@ func parseDomainLine(line string) string {
 		domain == "broadcasthost" || domain == "local" {
 		return ""
 	}
-	if !strings.Contains(domain, ".") {
-		return ""
-	}
+
 	// Reject IP addresses
 	if domain[0] >= '0' && domain[0] <= '9' {
 		allDigitsOrDots := true
@@ -332,7 +355,7 @@ func parseDomainLine(line string) string {
 
 	// Validate valid hostname labels [a-z0-9-]
 	labels := strings.Split(domain, ".")
-	if len(labels) < 2 {
+	if len(labels) < 2 && !isABP {
 		return ""
 	}
 	for _, label := range labels {

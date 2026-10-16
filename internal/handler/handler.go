@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -151,6 +152,13 @@ func (h *BuildHandler) Build(c *gin.Context) {
 	log.Printf("[API] Starting compilation for '%s' (derived from URL)", name)
 	result, err := compiler.CompileFilterList(name, req.URL)
 	if err != nil {
+		if errors.Is(err, compiler.ErrNoRulesFound) {
+			c.JSON(http.StatusBadRequest, model.ErrorResponse{
+				Status:  "error",
+				Message: "Compilation failed: " + err.Error(),
+			})
+			return
+		}
 		if h.notifier != nil {
 			h.notifier.NotifyBuildFailure(req.URL, "Compilation failed: "+err.Error())
 		}

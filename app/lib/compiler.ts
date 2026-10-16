@@ -30,13 +30,37 @@ export function parseDomainLine(line: string): string {
   if (line.includes("##") || line.includes("#@#") || line.includes("#?#") || line.includes("#$#") || line.includes("#%#")) {
     return "";
   }
-  
+
+  // Support Wildcard domain format: *.example.com (HaGeZi wildcard, OISD domainswild)
+  if (line.startsWith("*.")) {
+    line = line.slice(2);
+  }
+
+  // dnsmasq format: server=/domain.com/ or address=/domain.com/0.0.0.0
+  if (line.startsWith("server=/") || line.startsWith("address=/")) {
+    const clean = line.replace(/^(server|address)=\//, "");
+    const slashIdx = clean.indexOf("/");
+    if (slashIdx !== -1) {
+      line = clean.slice(0, slashIdx);
+    }
+  }
+
   const containsAnyUnsafe = /[\$\/\\\*]/.test(line);
   if (containsAnyUnsafe && !line.startsWith("||")) return "";
-  
+
   let domain = "";
-  if (line.startsWith("||")) {
+  const isABP = line.startsWith("||");
+
+  if (isABP) {
     domain = line.slice(2);
+
+    // Handle wildcard prefixes: ||*.example.com^ or ||*.tld^
+    if (domain.startsWith("*.")) {
+      domain = domain.slice(2);
+    } else if (domain.startsWith("*")) {
+      domain = domain.slice(1);
+    }
+
     if (/[\/\*\?]/.test(domain)) return "";
 
     // Inspect options after $ (e.g. $domain=..., $third-party, $badfilter, $script, etc.)
@@ -46,7 +70,22 @@ export function parseDomainLine(line: string): string {
       const opts = options.split(',');
       for (let opt of opts) {
         opt = opt.trim();
-        if (opt === "" || opt === "important" || opt === "empty" || opt === "mp4") {
+        if (
+          opt === "" ||
+          opt === "important" ||
+          opt === "empty" ||
+          opt === "mp4" ||
+          opt === "all" ||
+          opt === "popup" ||
+          opt === "document" ||
+          opt === "doc" ||
+          opt === "dns" ||
+          opt.startsWith("dnstype") ||
+          opt === "cname" ||
+          opt === "network" ||
+          opt.startsWith("ctag") ||
+          opt.startsWith("denyallow")
+        ) {
           continue;
         }
         // Any contextual browser rule (e.g. $domain=sarapbabe.com) must NOT become a global DNS block
@@ -54,7 +93,7 @@ export function parseDomainLine(line: string): string {
       }
       domain = domain.slice(0, dollarIdx);
     }
-    
+
     const carrotIdx = domain.indexOf('^');
     if (carrotIdx !== -1) domain = domain.slice(0, carrotIdx);
   } else if (
@@ -79,7 +118,7 @@ export function parseDomainLine(line: string): string {
       domain = cleanLine;
     }
   }
-  
+
   domain = domain.trim().toLowerCase();
   if (
     domain === "" ||
@@ -90,8 +129,7 @@ export function parseDomainLine(line: string): string {
   ) {
     return "";
   }
-  if (!domain.includes(".")) return "";
-  
+
   // Reject IP addresses
   if (domain[0] >= '0' && domain[0] <= '9') {
     if (/^[0-9\.]+$/.test(domain)) {
@@ -101,13 +139,13 @@ export function parseDomainLine(line: string): string {
 
   // Validate valid hostname labels [a-z0-9-]
   const labels = domain.split('.');
-  if (labels.length < 2) return "";
+  if (labels.length < 2 && !isABP) return "";
   for (const label of labels) {
     if (label.length === 0 || label.length > 63) return "";
     if (label.startsWith('-') || label.endsWith('-')) return "";
     if (!/^[a-z0-9-]+$/.test(label)) return "";
   }
-  
+
   return domain;
 }
 

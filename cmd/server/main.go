@@ -75,8 +75,9 @@ func main() {
 	// Health check
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
-			"time":   time.Now().UTC(),
+			"status":  "ok",
+			"version": "1.0.2",
+			"time":    time.Now().UTC(),
 		})
 	})
 

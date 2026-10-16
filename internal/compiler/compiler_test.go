@@ -30,6 +30,21 @@ func TestParseDomainLine(t *testing.T) {
 		{"double..dot.com", ""},
 		{"invalid_char!.com", ""},
 		{"@@||whitelist.com^", ""},
+		// Wildcard domain format (*.domain.com)
+		{"*.telemetry.001-studio.com", "telemetry.001-studio.com"},
+		{"*.0-02.net", "0-02.net"},
+		// $all modifier (AdGuard / Malware blocklists)
+		{"||acc.jiangsujiaxue.com^$all", "acc.jiangsujiaxue.com"},
+		{"||urlhaus.abuse.ch^$all,important", "urlhaus.abuse.ch"},
+		// dnsmasq format
+		{"server=/adikteev.com/", "adikteev.com"},
+		{"address=/beacon.krxd.net/0.0.0.0", "beacon.krxd.net"},
+		// TLD wildcard rules (from spam-tlds.txt)
+		{"||*.actor^", "actor"},
+		{"||*.africa^$denyallow=nation.africa", "africa"},
+		// Unsupported or contextual rules that must still be rejected
+		{"$removeparam=pjclid", ""},
+		{"duckduckgo.com,bing.com##a[href*=\"forkful.ai\"]:upward(li):remove()", ""},
 	}
 
 	for _, tt := range tests {
