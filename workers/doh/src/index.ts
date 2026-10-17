@@ -24,6 +24,7 @@ import { renderDashboardHtml } from "./html";
 import {
   generateSessionId,
   getProbeDomains,
+  getDnssecTestDomains,
   getClientNetworkInfo,
   enrichIp,
   evaluateLeak,
@@ -111,6 +112,7 @@ export default {
     if (pathname === "/api/dns-leak/init" || pathname === "/api/dns-leak/session") {
       const sessionId = generateSessionId();
       const probeDomains = getProbeDomains(sessionId);
+      const dnssecSuite = getDnssecTestDomains(sessionId);
       const client = getClientNetworkInfo(req);
       return Response.json(
         {
@@ -119,6 +121,15 @@ export default {
           wsUrl: `wss://ws.dnscheck.tools/watch/${sessionId}`,
           watchWebUrl: `https://dnscheck.tools/watch/${sessionId}`,
           probeDomains,
+          dnssecSuite,
+          dualStackEndpoints: {
+            ipv4: "https://myipv4.addr.tools/plain",
+            ipv6: "https://myipv6.addr.tools/plain",
+          },
+          stunServers: [
+            "stun:myip.addr.tools:3478",
+            "stun:stun.l.google.com:19302",
+          ],
           client,
           poweredBy: POWERED_BY,
         },

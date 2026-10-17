@@ -19,8 +19,8 @@ console.log(`✓ generateSessionId generated valid hex: ${sessionId}`);
 // 2. Test getProbeDomains
 const probes = getProbeDomains(sessionId);
 assert.strictEqual(probes.length, 4, "Must generate 4 probe domains");
-assert.strictEqual(probes[0], `1.${sessionId}.test.dnscheck.tools`);
-assert.strictEqual(probes[3], `4.${sessionId}.test.dnscheck.tools`);
+assert.strictEqual(probes[0], `a.${sessionId}-nullip.test.dnscheck.tools`);
+assert.strictEqual(probes[3], `d.${sessionId}-nullip.test.dnscheck.tools`);
 console.log("✓ getProbeDomains generated 4 valid dnscheck.tools subdomains");
 
 // 3. Test getReverseZone for IPv4 and IPv6
@@ -107,7 +107,7 @@ const leakReq = new Request("https://dns.pwhs.app/leak", {
 const leakResp = await worker.fetch(leakReq, mockEnv, mockCtx);
 assert.strictEqual(leakResp.status, 200);
 const leakHtml = await leakResp.text();
-assert(leakHtml.includes("DNS Leak & Privacy Check"), "Must contain page title");
+assert(leakHtml.includes("DNS Resolvers & Security Check"), "Must contain page title");
 assert(leakHtml.includes("brianshea2/addr.tools"), "Must contain attribution to brianshea2/addr.tools");
 assert(leakHtml.includes("https://github.com/brianshea2/addr.tools"), "Must contain github link");
 console.log("✓ GET /leak returns web UI with brianshea2/addr.tools attribution");

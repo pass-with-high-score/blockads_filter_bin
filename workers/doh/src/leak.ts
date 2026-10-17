@@ -1,5 +1,5 @@
 /**
- * BlockAds DNS Leak Check Service & Open API
+ * BlockAds DNS Leak Check & Security Service
  * Powered by: brianshea2/addr.tools (https://github.com/brianshea2/addr.tools)
  */
 
@@ -31,9 +31,17 @@ export interface ResolverInfo {
   city?: string;
   region?: string;
   ptr?: string | null;
+  ns?: string | null;
   clientSubnet?: string | null;
   proto?: string;
+  udpSize?: number;
   isSameAsClientAsn?: boolean;
+}
+
+export interface DnssecSuite {
+  algorithms: Array<{ id: string; name: string }>;
+  tests: Array<{ id: string; name: string }>;
+  domains: Record<string, string>;
 }
 
 export interface LeakAnalysisResult {
@@ -66,11 +74,41 @@ export function generateSessionId(): string {
  */
 export function getProbeDomains(sessionId: string): string[] {
   return [
-    `1.${sessionId}.test.dnscheck.tools`,
-    `2.${sessionId}.test.dnscheck.tools`,
-    `3.${sessionId}.test.dnscheck.tools`,
-    `4.${sessionId}.test.dnscheck.tools`,
+    `a.${sessionId}-nullip.test.dnscheck.tools`,
+    `b.${sessionId}-nullip.test.dnscheck.tools`,
+    `c.${sessionId}-nullip.test.dnscheck.tools`,
+    `d.${sessionId}-nullip.test.dnscheck.tools`,
   ];
+}
+
+/**
+ * Generate full DNSSEC validation test domains
+ */
+export function getDnssecTestDomains(sessionId: string): DnssecSuite {
+  const algorithms = [
+    { id: "alg13", name: "ECDSA P-256" },
+    { id: "alg14", name: "ECDSA P-384" },
+    { id: "alg15", name: "Ed25519" },
+    { id: "alg18", name: "MLDSA44" },
+  ];
+
+  const tests = [
+    { id: "valid", name: "Valid" },
+    { id: "badsig", name: "Invalid" },
+    { id: "expiredsig", name: "Expired" },
+    { id: "nosig", name: "Missing" },
+  ];
+
+  const domains: Record<string, string> = {};
+
+  for (const alg of algorithms) {
+    domains[`${alg.id}_valid`] = `${sessionId}.test-${alg.id}.dnscheck.tools`;
+    domains[`${alg.id}_badsig`] = `${sessionId}-badsig.test-${alg.id}.dnscheck.tools`;
+    domains[`${alg.id}_expiredsig`] = `${sessionId}-expiredsig.test-${alg.id}.dnscheck.tools`;
+    domains[`${alg.id}_nosig`] = `${sessionId}-nosig.test-${alg.id}.dnscheck.tools`;
+  }
+
+  return { algorithms, tests, domains };
 }
 
 /**
@@ -130,8 +168,8 @@ export function getReverseZone(ip: string): string | null {
 }
 
 /**
- * Enrich an IP address with Geo, ASN, Organization, and Reverse DNS (PTR)
- * Uses addr.tools APIs with graceful error handling
+ * Enrich an IP address with Geo, ASN, Organization, and Reverse DNS (PTR / NS)
+ * Uses addr.tools APIs with fallback to SOA authoritative nameserver if PTR is missing
  */
 export async function enrichIp(ip: string): Promise<ResolverInfo> {
   let org = "Unknown";
@@ -139,6 +177,7 @@ export async function enrichIp(ip: string): Promise<ResolverInfo> {
   let city = "";
   let region = "";
   let ptr: string | null = null;
+  let ns: string | null = null;
 
   // 1. Fetch Geo and Org from https://ip.addr.tools/<ip>
   try {
@@ -157,7 +196,7 @@ export async function enrichIp(ip: string): Promise<ResolverInfo> {
     console.warn(`[LeakCheck] Geo lookup failed for ${ip}:`, err);
   }
 
-  // 2. Fetch PTR record from https://addr.tools/dns/<reverseZone>/ptr
+  // 2. Fetch PTR / SOA NS from https://addr.tools/dns/<reverseZone>/ptr
   const revZone = getReverseZone(ip);
   if (revZone) {
     try {
@@ -170,10 +209,17 @@ export async function enrichIp(ip: string): Promise<ResolverInfo> {
         const answer = ptrData?.Answer?.find((a: any) => a.type === 12);
         if (answer?.data) {
           ptr = answer.data.endsWith(".") ? answer.data.slice(0, -1) : answer.data;
+        } else {
+          // Fallback to SOA Nameserver (ns: cruz.ns.cloudflare.com)
+          const soa = ptrData?.Authority?.find((a: any) => a.type === 6);
+          if (soa?.data) {
+            const rawNs = soa.data.split(" ")[0];
+            ns = rawNs.endsWith(".") ? rawNs.slice(0, -1) : rawNs;
+          }
         }
       }
     } catch (err) {
-      console.warn(`[LeakCheck] PTR lookup failed for ${ip}:`, err);
+      console.warn(`[LeakCheck] PTR/NS lookup failed for ${ip}:`, err);
     }
   }
 
@@ -184,6 +230,7 @@ export async function enrichIp(ip: string): Promise<ResolverInfo> {
     city,
     region,
     ptr,
+    ns,
   };
 }
 
@@ -208,7 +255,6 @@ export function evaluateLeak(
     };
   }
 
-  // Check if any resolver's organization matches client ISP or is local ISP
   let isLeak = false;
   let hasEcsLeak = false;
 
@@ -216,7 +262,6 @@ export function evaluateLeak(
 
   for (const r of resolvers) {
     const resolverOrgNormalized = (r.org || "").toLowerCase();
-    // If the detected resolver ASN/Org matches client local ISP
     if (
       clientOrgNormalized &&
       resolverOrgNormalized &&

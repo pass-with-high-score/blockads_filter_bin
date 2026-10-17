@@ -1,5 +1,5 @@
 /**
- * Web UI for BlockAds DNS Leak Test
+ * Web UI for BlockAds DNS Leak & Security Inspector
  * Powered by: brianshea2/addr.tools (https://github.com/brianshea2/addr.tools)
  */
 
@@ -10,8 +10,8 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DNS Leak Test - BlockAds</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>DNS Leak & Security Check - BlockAds</title>
   <link rel="icon" type="image/svg+xml" href="https://complier.pwhs.app/icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,6 +29,7 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       --danger: #ef4444;
       --warning: #f59e0b;
       --info: #3b82f6;
+      --green: #10b981;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -38,9 +39,8 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       min-height: 100vh;
       overflow-x: hidden;
       background-image:
-        radial-gradient(ellipse at 20% 50%, rgba(0, 230, 118, 0.06) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 20%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
-        radial-gradient(ellipse at 50% 80%, rgba(236, 72, 153, 0.04) 0%, transparent 50%);
+        radial-gradient(ellipse at 20% 50%, rgba(0, 230, 118, 0.05) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 50%);
     }
 
     /* Navbar */
@@ -51,14 +51,14 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       right: 0;
       z-index: 50;
       backdrop-filter: blur(16px);
-      background: rgba(255, 255, 255, 0.85);
+      background: rgba(255, 255, 255, 0.88);
       border-bottom: 1px solid var(--border);
     }
     .nav-container {
-      max-width: 1100px;
+      max-width: 1040px;
       margin: 0 auto;
       padding: 0 20px;
-      height: 64px;
+      height: 60px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -72,17 +72,13 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       font-weight: 700;
       font-size: 1.15rem;
     }
-    .brand-logo {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-    }
+    .brand-logo { width: 30px; height: 30px; border-radius: 8px; }
     .brand span { color: var(--accent); }
     .nav-links {
       display: flex;
       align-items: center;
-      gap: 20px;
-      font-size: 14px;
+      gap: 18px;
+      font-size: 13.5px;
       color: var(--text-secondary);
     }
     .nav-links a {
@@ -96,16 +92,15 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
 
     /* Layout */
     .main-wrapper {
-      max-width: 920px;
+      max-width: 960px;
       margin: 0 auto;
-      padding: 100px 20px 80px;
+      padding: 90px 20px 80px;
     }
 
     /* Hero */
     .hero {
       text-align: center;
-      position: relative;
-      margin-bottom: 36px;
+      margin-bottom: 30px;
     }
     .hero-pill {
       display: inline-flex;
@@ -118,7 +113,7 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       color: #00a846;
       font-size: 12px;
       font-weight: 700;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
     .hero-pill::before {
       content: '';
@@ -129,32 +124,31 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       box-shadow: 0 0 10px var(--accent);
     }
     .hero h1 {
-      font-size: 2.2rem;
+      font-size: 2.1rem;
       font-weight: 800;
       letter-spacing: -0.03em;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       line-height: 1.2;
     }
     .hero p {
       color: var(--text-secondary);
-      font-size: 15px;
-      max-width: 620px;
+      font-size: 14.5px;
+      max-width: 640px;
       margin: 0 auto;
     }
 
-    /* Attribution Banner */
     .attribution-badge {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      margin-top: 14px;
-      padding: 6px 14px;
+      margin-top: 12px;
+      padding: 5px 14px;
       background: #ffffff;
       border: 1px solid var(--border);
       border-radius: 20px;
       font-size: 12px;
       color: var(--text-secondary);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
     }
     .attribution-badge a {
       color: #2563eb;
@@ -168,82 +162,144 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 24px;
-      margin-bottom: 24px;
-      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+      padding: 22px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 3px 15px -2px rgba(0, 0, 0, 0.04);
     }
-    .card-title {
-      font-size: 16px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-    }
-
-    /* Client info grid */
-    .info-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 12px;
-    }
-    .info-item {
-      background: #f8fafc;
-      border: 1px solid #f1f5f9;
-      border-radius: 12px;
-      padding: 12px 14px;
-    }
-    .info-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: var(--text-secondary);
-      margin-bottom: 4px;
-    }
-    .info-val {
-      font-size: 13.5px;
+    .section-header {
+      font-size: 15px;
       font-weight: 700;
       color: var(--text-primary);
-      font-family: 'JetBrains Mono', monospace;
-      word-break: break-all;
-    }
-
-    /* Action bar */
-    .action-row {
+      margin-bottom: 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+    }
+    .section-header a {
+      color: #2563eb;
+      text-decoration: none;
+    }
+
+    /* IP List & Org styling */
+    .org-group {
+      margin-bottom: 16px;
+    }
+    .org-group:last-child { margin-bottom: 0; }
+    .org-title {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ip-row {
+      display: flex;
+      align-items: center;
       flex-wrap: wrap;
       gap: 12px;
-      margin-top: 18px;
-      padding-top: 18px;
-      border-top: 1px solid var(--border);
+      padding: 9px 12px;
+      background: #f8fafc;
+      border: 1px solid #f1f5f9;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
     }
-    .btn-test {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      background: #111827;
-      color: #ffffff;
-      border: none;
-      padding: 10px 22px;
-      border-radius: 10px;
-      font-size: 14px;
+    .ip-address {
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .ip-address a {
+      color: inherit;
+      text-decoration: none;
+    }
+    .ip-address a:hover {
+      color: #2563eb;
+      text-decoration: underline;
+    }
+    .tag-ptr {
+      color: #2563eb;
+      font-size: 12px;
+      background: #eff6ff;
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid #dbeafe;
+    }
+    .tag-ns {
+      color: #7c3aed;
+      font-size: 12px;
+      background: #f5f3ff;
+      padding: 2px 7px;
+      border-radius: 4px;
+      border: 1px solid #ede9fe;
+    }
+    .tag-geo {
+      color: #0d9488;
+      font-size: 12px;
+      margin-left: auto;
+      font-family: 'Inter', sans-serif;
+      font-weight: 500;
+    }
+    .tag-leak {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fca5a5;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+
+    /* DNSSEC Table */
+    .dnssec-table-wrapper {
+      overflow-x: auto;
+      margin-top: 10px;
+    }
+    table.dnssec-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: center;
+    }
+    table.dnssec-table th {
+      background: #f8fafc;
+      padding: 10px 14px;
       font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s ease;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
     }
-    .btn-test:hover { background: #000000; transform: translateY(-1px); }
-    .btn-test:disabled { opacity: 0.6; cursor: not-allowed; }
+    table.dnssec-table th:first-child { text-align: left; }
+    table.dnssec-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid #f1f5f9;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    table.dnssec-table td:first-child {
+      text-align: left;
+      font-family: 'Inter', sans-serif;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+    .pass { color: #16a34a; background: #f0fdf4; border-radius: 6px; }
+    .fail { color: #dc2626; background: #fef2f2; border-radius: 6px; }
+    .fail-star { color: #d97706; background: #fffbeb; border-radius: 6px; }
+    .err { color: #d97706; background: #fffbeb; border-radius: 6px; }
+    .pending { color: #94a3b8; font-weight: 400; }
 
     /* Verdict Banner */
     .verdict-box {
       border-radius: 12px;
-      padding: 16px 18px;
+      padding: 14px 18px;
       margin-bottom: 20px;
-      display: none;
-      align-items: flex-start;
+      display: flex;
+      align-items: center;
       gap: 12px;
     }
     .verdict-box.secure {
@@ -261,94 +317,93 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       border: 1px solid #fde68a;
       color: #78350f;
     }
-    .verdict-title {
-      font-size: 15px;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-    .verdict-desc {
-      font-size: 13px;
-      line-height: 1.45;
-    }
+    .verdict-title { font-size: 14.5px; font-weight: 700; }
+    .verdict-desc { font-size: 13px; color: inherit; opacity: 0.9; }
 
-    /* Resolvers Table */
-    .table-container {
-      overflow-x: auto;
-      margin-top: 12px;
-    }
-    table.resolvers-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      text-align: left;
-    }
-    table.resolvers-table th {
-      background: #f8fafc;
-      padding: 10px 14px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-    }
-    table.resolvers-table td {
-      padding: 12px 14px;
-      border-bottom: 1px solid #f1f5f9;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12.5px;
-    }
-    .badge-status {
-      display: inline-flex;
+    /* Live Status Bar */
+    .status-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 38px;
+      background: #111827;
+      color: #d1d5db;
+      display: flex;
       align-items: center;
-      gap: 4px;
+      justify-content: space-between;
+      padding: 0 24px;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      z-index: 40;
+      border-top: 1px solid #1f2937;
+    }
+    .status-tags { display: flex; align-items: center; gap: 14px; }
+    .status-tag {
       padding: 2px 8px;
-      border-radius: 6px;
+      border-radius: 4px;
       font-size: 11px;
       font-weight: 700;
-      font-family: 'Inter', sans-serif;
     }
-    .badge-safe { background: #dcfce7; color: #166534; }
-    .badge-leak { background: #fee2e2; color: #991b1b; }
-    .badge-warn { background: #fef3c7; color: #92400e; }
+    .status-tag.green { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .status-tag.red { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .status-tag.yellow { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .status-tag.dim { color: #6b7280; font-weight: 400; }
 
-    /* Query Log Console */
-    .console-box {
-      background: #0f172a;
-      color: #94a3b8;
+    /* Action bar */
+    .btn-test {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #111827;
+      color: #ffffff;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-test:hover { background: #000000; transform: translateY(-1px); }
+    .btn-test:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Star Banner */
+    .star-card {
+      text-align: center;
+      padding: 16px;
+      background: #f8fafc;
+      border: 1px dashed var(--border);
       border-radius: 12px;
-      padding: 14px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
-      max-height: 180px;
-      overflow-y: auto;
-      margin-top: 16px;
-      display: none;
-      line-height: 1.6;
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      margin-top: 10px;
     }
-    .console-entry { display: block; margin-bottom: 4px; }
-    .console-entry .highlight { color: #38bdf8; }
-    .console-entry .green { color: #4ade80; }
-    .console-entry .amber { color: #fbbf24; }
+    .star-card a {
+      color: #2563eb;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .star-card a:hover { text-decoration: underline; }
 
-    /* Tabs */
+    /* Developer tabs */
     .tabs-header {
       display: flex;
       gap: 8px;
       border-bottom: 1px solid var(--border);
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
     .tab-btn {
       background: none;
       border: none;
-      padding: 10px 16px;
-      font-size: 13.5px;
+      padding: 8px 14px;
+      font-size: 13px;
       font-weight: 600;
       color: var(--text-secondary);
       cursor: pointer;
       position: relative;
     }
-    .tab-btn.active {
-      color: #000000;
-    }
+    .tab-btn.active { color: #000000; }
     .tab-btn.active::after {
       content: '';
       position: absolute;
@@ -360,43 +415,20 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
     }
     .tab-pane { display: none; }
     .tab-pane.active { display: block; }
-
-    /* Code block */
     pre.code-block {
       background: #0f172a;
       color: #e2e8f0;
-      padding: 16px;
-      border-radius: 12px;
+      padding: 14px;
+      border-radius: 10px;
       font-family: 'JetBrains Mono', monospace;
-      font-size: 12.5px;
+      font-size: 12px;
       overflow-x: auto;
       line-height: 1.5;
     }
-
-    /* Footer */
-    .footer {
-      border-top: 1px solid var(--border);
-      padding: 32px 20px;
-      margin-top: 40px;
-      text-align: center;
-      font-size: 13px;
-      color: var(--text-secondary);
-    }
-    .footer a {
+    .link-btn {
       color: #2563eb;
-      text-decoration: none;
-    }
-    .footer a:hover { text-decoration: underline; }
-    .footer-power {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-weight: 600;
-      margin-top: 8px;
-      background: #ffffff;
-      padding: 4px 12px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
+      cursor: pointer;
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -411,7 +443,7 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       </a>
       <nav class="nav-links">
         <a href="/">Setup DNS</a>
-        <a href="/leak" class="active">DNS Leak Test</a>
+        <a href="/leak" class="active">DNS Leak & Security</a>
         <a href="https://complier.pwhs.app" target="_blank">Compiler</a>
         <a href="/api/dns-leak/docs">Open API</a>
         <a href="https://github.com/brianshea2/addr.tools" target="_blank" rel="noopener noreferrer">addr.tools ↗</a>
@@ -422,100 +454,115 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
   <main class="main-wrapper">
     <!-- Hero Section -->
     <section class="hero">
-      <div class="hero-pill">Real-Time Edge Inspector</div>
-      <h1>DNS Leak & Privacy Check</h1>
+      <div class="hero-pill">Real-Time Deep Inspection</div>
+      <h1>DNS Resolvers & Security Check</h1>
       <p>
-        Check if your DNS requests are leaking to unencrypted ISP resolvers or exposing your private IP subnet via EDNS Client Subnet (ECS).
+        Inspect active DNS resolvers, dual-stack client IPs, EDNS Client Subnet (ECS) advertisement, and DNSSEC cryptographic signature validation.
       </p>
       <div>
         <div class="attribution-badge">
           <span>Powered by:</span>
           <a href="${POWERED_BY.url}" target="_blank" rel="noopener noreferrer">
-            ${POWERED_BY.name} (${POWERED_BY.description})
+            ${POWERED_BY.name}: ${POWERED_BY.description}
           </a>
         </div>
       </div>
     </section>
 
-    <!-- Main Leak Check Card -->
-    <div class="card">
-      <div class="card-title">
-        <span>Your Public Network Identity</span>
-        <span style="font-size: 12px; font-weight: 500; color: var(--text-secondary);">Direct HTTP Connection</span>
+    <!-- Overall Verdict Banner -->
+    <div id="verdictBox" class="verdict-box secure">
+      <div id="verdictIcon" style="font-size: 22px;">🛡️</div>
+      <div>
+        <div id="verdictTitle" class="verdict-title">Running deep inspection...</div>
+        <div id="verdictDesc" class="verdict-desc">Testing active DNS resolvers and cryptographic signature validation.</div>
       </div>
-
-      <div class="info-grid">
-        <div class="info-item">
-          <div class="info-label">Public IP Address</div>
-          <div class="info-val" id="clientIp">${client.ip}</div>
-        </div>
-        <div class="info-item">
-          <div class="info-label">Country / Region</div>
-          <div class="info-val">${client.city ? client.city + ", " : ""}${client.country}</div>
-        </div>
-        <div class="info-item">
-          <div class="info-label">ISP / ASN</div>
-          <div class="info-val">AS${client.asn} (${client.asOrg})</div>
-        </div>
-        <div class="info-item">
-          <div class="info-label">Cloudflare Edge Colo</div>
-          <div class="info-val">${client.colo}</div>
-        </div>
-      </div>
-
-      <div class="action-row">
-        <div style="font-size: 13px; color: var(--text-secondary);">
-          Status: <strong id="testStatusText" style="color: var(--text-primary);">Ready</strong>
-        </div>
-        <button id="btnRunTest" class="btn-test" onclick="startLeakCheck()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-          Run DNS Leak Test
-        </button>
-      </div>
-
-      <!-- Live Terminal output -->
-      <div id="consoleBox" class="console-box"></div>
     </div>
 
-    <!-- Results Section -->
+    <!-- 1. Your IP addresses (show more) -->
     <div class="card">
-      <div class="card-title">
-        <span>Detected DNS Resolvers</span>
-        <span id="resolverCountBadge" class="badge-status badge-safe" style="display:none;">0 Resolvers Found</span>
+      <div class="section-header">
+        <span>Your IP addresses (<span id="btnShowMore" class="link-btn" onclick="askMicPermission()">show more</span>):</span>
+        <button id="btnRetest" class="btn-test" onclick="restartTest()">Retest</button>
+      </div>
+      <div id="clientIpList">
+        <div style="color:var(--text-secondary); font-size:13px;">detecting IP addresses...</div>
+      </div>
+    </div>
+
+    <!-- 2. ECS Results (Hidden unless advertised) -->
+    <div class="card" id="ecsCard" style="display:none; border-color:#fde68a; background:#fffbeb;">
+      <div class="section-header" style="color:#b45309;">
+        <span>⚠️ Your DNS resolvers advertise your IP subnet (<a href="https://en.wikipedia.org/wiki/EDNS_Client_Subnet" target="_blank" style="color:#b45309; text-decoration:underline;">ECS</a>):</span>
+      </div>
+      <div id="ecsList"></div>
+    </div>
+
+    <!-- 3. Your DNS resolvers -->
+    <div class="card">
+      <div class="section-header">
+        <span>Your DNS resolvers:</span>
+        <span id="resolverCountTag" style="font-size:12px; color:var(--text-secondary); font-weight:500;">detecting...</span>
+      </div>
+      <div id="resolverList">
+        <div style="color:var(--text-secondary); font-size:13px;">detecting DNS resolvers...</div>
+      </div>
+    </div>
+
+    <!-- 4. Your DNS security (DNSSEC) -->
+    <div class="card">
+      <div class="section-header">
+        <span>Your DNS security (<a href="https://en.wikipedia.org/wiki/Domain_Name_System_Security_Extensions" target="_blank">DNSSEC</a>):</span>
+        <span id="dnssecSummaryBadge" class="status-tag dim">pending...</span>
       </div>
 
-      <!-- Verdict Banner -->
-      <div id="verdictBox" class="verdict-box">
-        <div id="verdictIcon" style="font-size: 24px;">🛡️</div>
-        <div>
-          <div id="verdictTitle" class="verdict-title">No DNS Leak Detected</div>
-          <div id="verdictDesc" class="verdict-desc">All DNS queries were resolved securely without exposing your local ISP.</div>
-        </div>
-      </div>
-
-      <div id="emptyResolverMsg" style="text-align: center; padding: 24px; color: var(--text-secondary); font-size: 14px;">
-        Click <strong>"Run DNS Leak Test"</strong> above to send probes and detect your active DNS resolvers.
-      </div>
-
-      <div class="table-container" id="resolverTableContainer" style="display:none;">
-        <table class="resolvers-table">
+      <div class="dnssec-table-wrapper">
+        <table class="dnssec-table">
           <thead>
             <tr>
-              <th>Resolver IP</th>
-              <th>Reverse DNS (PTR)</th>
-              <th>Provider / Org</th>
-              <th>Country</th>
-              <th>ECS Privacy</th>
-              <th>Verdict</th>
+              <th>Signature</th>
+              <th>ECDSA P-256</th>
+              <th>ECDSA P-384</th>
+              <th>Ed25519</th>
+              <th>MLDSA44</th>
             </tr>
           </thead>
-          <tbody id="resolverTableBody"></tbody>
+          <tbody>
+            <tr>
+              <td>Invalid</td>
+              <td id="cell-0" class="pending">...</td>
+              <td id="cell-1" class="pending">...</td>
+              <td id="cell-2" class="pending">...</td>
+              <td id="cell-3" class="pending">...</td>
+            </tr>
+            <tr>
+              <td>Expired</td>
+              <td id="cell-4" class="pending">...</td>
+              <td id="cell-5" class="pending">...</td>
+              <td id="cell-6" class="pending">...</td>
+              <td id="cell-7" class="pending">...</td>
+            </tr>
+            <tr>
+              <td>Missing</td>
+              <td id="cell-8" class="pending">...</td>
+              <td id="cell-9" class="pending">...</td>
+              <td id="cell-10" class="pending">...</td>
+              <td id="cell-11" class="pending">...</td>
+            </tr>
+          </tbody>
         </table>
+      </div>
+      <div id="mldsaNote" style="display:none; font-size:11.5px; color:var(--text-secondary); margin-top:10px;">
+        *MLDSA44 is a new quantum-resistant signature algorithm (FIPS 204) not yet widely validated.
       </div>
     </div>
 
-    <!-- Developer & Mobile App Section -->
-    <div class="card">
+    <!-- Star Us on GitHub -->
+    <div class="star-card">
+      Like this tool? Star us on <a href="https://github.com/brianshea2/addr.tools" target="_blank" rel="noopener noreferrer">GitHub (brianshea2/addr.tools)</a>.
+    </div>
+
+    <!-- 5. Developer Guide & Open API for Android -->
+    <div class="card" style="margin-top:24px;">
       <div class="tabs-header">
         <button class="tab-btn active" onclick="switchTab('androidTab', this)">Android Kotlin Client</button>
         <button class="tab-btn" onclick="switchTab('apiTab', this)">Open REST API</button>
@@ -524,112 +571,79 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
 
       <!-- Tab 1: Android Kotlin -->
       <div id="androidTab" class="tab-pane active">
-        <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 12px;">
-          To integrate DNS leak detection into <code>blockads-android</code>, call our Open API to get probe domains, resolve them using Android standard DNS lookup, and stream or evaluate results:
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">
+          Code snippet for <code>blockads-android</code> to test DNS leak and DNSSEC validation:
         </p>
-        <pre class="code-block"><code>// Step 1: Call https://${host}/api/dns-leak/init
-val response = httpClient.get("https://${host}/api/dns-leak/init").body&lt;DnsLeakInitResponse&gt;()
+        <pre class="code-block"><code>// 1. Fetch probe configuration
+val init = httpClient.get("https://${host}/api/dns-leak/init").body&lt;DnsLeakInitResponse&gt;()
 
-// Step 2: Resolve probe domains using standard Android DNS resolver
-// This forces Android's active DNS provider (VPN / Private DNS / Wi-Fi) to query the authoritative nameserver
+// 2. Resolve probe domains via Android device DNS
 coroutineScope {
-    response.probeDomains.forEach { domain -&gt;
+    init.probeDomains.forEach { domain -&gt;
         launch(Dispatchers.IO) {
             runCatching { java.net.InetAddress.getAllByName(domain) }
         }
     }
 }
 
-// Step 3: Listen for incoming resolvers via WebSocket or query the result:
-// wssUrl: \${response.wsUrl} (from addr.tools)
-// Or send detected resolver IPs to: POST https://${host}/api/dns-leak/analyze</code></pre>
+// 3. Connect to WebSocket watcher to receive resolvers in real time:
+// val ws = okHttpClient.newWebSocket(Request.Builder().url(init.wsUrl).build(), listener)
+// Or send discovered resolver IPs to: POST https://${host}/api/dns-leak/analyze</code></pre>
       </div>
 
-      <!-- Tab 2: REST API Endpoints -->
+      <!-- Tab 2: REST Endpoints -->
       <div id="apiTab" class="tab-pane">
-        <table class="resolvers-table" style="font-family: inherit;">
-          <thead>
-            <tr>
-              <th>Method</th>
-              <th>Endpoint</th>
-              <th>Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><code>GET</code></td>
-              <td><code>/api/dns-leak/init</code></td>
-              <td>Initialize leak test session, get probe subdomains & client network identity</td>
-            </tr>
-            <tr>
-              <td><code>GET</code></td>
-              <td><code>/api/dns-leak/myip</code></td>
-              <td>Returns client IP, ASN, ISP Org, Country, City and Cloudflare Colo</td>
-            </tr>
-            <tr>
-              <td><code>GET</code></td>
-              <td><code>/api/dns-leak/enrich?ip=1.1.1.1</code></td>
-              <td>Lookup Geo, Org, and Reverse DNS (PTR) for any resolver IP via addr.tools</td>
-            </tr>
-            <tr>
-              <td><code>POST</code></td>
-              <td><code>/api/dns-leak/analyze</code></td>
-              <td>Submit resolver list to evaluate ISP leaks and EDNS Client Subnet exposure</td>
-            </tr>
-          </tbody>
-        </table>
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">
+          All endpoints support CORS (<code>*</code>) for cross-platform usage:
+        </p>
+        <pre class="code-block"><code>GET  /api/dns-leak/init          # Session, probe domains, and DNSSEC suite
+GET  /api/dns-leak/myip          # Client public IP, ASN & Location
+GET  /api/dns-leak/enrich?ip=... # Geo, Org & Reverse DNS PTR/NS for any resolver
+POST /api/dns-leak/analyze       # Evaluate resolver list for leaks & ECS exposure</code></pre>
       </div>
 
-      <!-- Tab 3: OpenAPI Spec -->
+      <!-- Tab 3: OpenAPI -->
       <div id="specTab" class="tab-pane">
-        <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 12px;">
-          You can import this OpenAPI specification directly into Swagger, Postman, or Android Studio:
+        <p style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">
+          Interactive Swagger UI and raw OpenAPI 3.0 specification:
         </p>
-        <div style="display: flex; gap: 10px;">
-          <a href="/api/dns-leak/openapi.json" target="_blank" class="btn-test" style="text-decoration:none; display:inline-flex;">
-            Download openapi.json
-          </a>
-          <a href="/api/dns-leak/docs" target="_blank" class="btn-test" style="text-decoration:none; display:inline-flex; background:#2563eb;">
-            View Interactive Docs
-          </a>
+        <div style="display:flex; gap:10px;">
+          <a href="/api/dns-leak/openapi.json" target="_blank" class="btn-test" style="text-decoration:none;">Download openapi.json</a>
+          <a href="/api/dns-leak/docs" target="_blank" class="btn-test" style="text-decoration:none; background:#2563eb;">Open Swagger Docs</a>
         </div>
       </div>
     </div>
   </main>
 
-  <!-- Footer with Attribution -->
-  <footer class="footer">
+  <!-- Live Status Bar -->
+  <div class="status-bar">
+    <div class="status-tags">
+      <span id="rtt-status" class="status-tag dim">rtt: --</span>
+      <span id="ipv6-status" class="status-tag dim">IPv6</span>
+      <span id="edns-status" class="status-tag dim">EDNS</span>
+      <span id="dnssec-status" class="status-tag dim">DNSSEC</span>
+      <span id="ech-status" class="status-tag dim">ECH</span>
+    </div>
     <div>
-      <strong>BlockAds DNS Ecosystem</strong> &bull; Serverless Privacy & Security on Cloudflare Edge
+      <span>dns: <strong id="queryCount" style="color:#00E676;">0</strong></span>
     </div>
-    <div style="margin-top: 8px;">
-      <div class="footer-power">
-        <span>Powered by:</span>
-        <a href="${POWERED_BY.url}" target="_blank" rel="noopener noreferrer">
-          ${POWERED_BY.name}
-        </a>
-        <span style="color:#94a3b8;">&bull;</span>
-        <span style="font-weight:400;">${POWERED_BY.description}</span>
-      </div>
-    </div>
-  </footer>
+  </div>
 
   <script>
-    let activeSession = null;
-    let ws = null;
+    const clientId = Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0');
+    const clientIPs = new Map();
     const detectedResolvers = new Map();
+    const clientSubnets = new Map();
+    const ipDataCache = new Map();
+    const dnssecTests = new Array(16);
+    let totalDnsQueries = 0;
+    let seenIPv6 = false;
+    let udpSizes = [];
+    let ws = null;
+    let abortController = new AbortController();
+
     const clientAsn = ${client.asn};
     const clientOrg = "${client.asOrg.replace(/"/g, '\\"')}";
-
-    function logConsole(msg, cls = "") {
-      const box = document.getElementById('consoleBox');
-      box.style.display = 'block';
-      const entry = document.createElement('span');
-      entry.className = 'console-entry ' + cls;
-      entry.innerHTML = '[' + new Date().toLocaleTimeString() + '] ' + msg;
-      box.appendChild(entry);
-      box.scrollTop = box.scrollHeight;
-    }
 
     function switchTab(tabId, el) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -638,201 +652,341 @@ coroutineScope {
       document.getElementById(tabId).classList.add('active');
     }
 
-    async function startLeakCheck() {
-      const btn = document.getElementById('btnRunTest');
-      const statusText = document.getElementById('testStatusText');
-      const consoleBox = document.getElementById('consoleBox');
-      const emptyMsg = document.getElementById('emptyResolverMsg');
-      const tableContainer = document.getElementById('resolverTableContainer');
-      const tbody = document.getElementById('resolverTableBody');
-      const verdictBox = document.getElementById('verdictBox');
-
-      btn.disabled = true;
-      btn.innerHTML = 'Probing DNS Resolvers...';
-      statusText.innerHTML = '<span style="color:#2563eb;">Initializing test session...</span>';
-      consoleBox.innerHTML = '';
-      tbody.innerHTML = '';
-      verdictBox.style.display = 'none';
-      detectedResolvers.clear();
-
+    // Helper to fetch IP metadata from addr.tools
+    async function getIPData(ip) {
+      if (ipDataCache.has(ip)) return ipDataCache.get(ip);
       try {
-        logConsole('Initiating test session via /api/dns-leak/init...', 'highlight');
-        const initResp = await fetch('/api/dns-leak/init');
-        const initData = await initResp.json();
-        activeSession = initData;
-
-        logConsole('Session generated: &lt;code&gt;' + initData.sessionId + '&lt;/code&gt;', 'green');
-        logConsole('Connecting to real-time watcher at: ' + initData.wsUrl + '...', 'highlight');
-
-        // Connect WebSocket to addr.tools
-        ws = new WebSocket(initData.wsUrl, 'full');
-
-        ws.onopen = async () => {
-          logConsole('Watcher connected! Firing DNS resolution probes...', 'green');
-          statusText.innerHTML = '<span style="color:#059669;">Sending DNS probes...</span>';
-
-          // Trigger browser DNS resolution probes
-          for (let i = 0; i < initData.probeDomains.length; i++) {
-            const domain = initData.probeDomains[i];
-            logConsole('Resolving probe: ' + domain);
-            fetch('https://' + domain + '/', { mode: 'no-cors' }).catch(() => {});
-          }
-        };
-
-        ws.onmessage = async (evt) => {
-          try {
-            const msg = JSON.parse(evt.data);
-            logConsole('Received query from resolver: ' + msg.remoteIp + ' (' + msg.proto + ')', 'green');
-            await handleDetectedResolver(msg);
-          } catch (e) {
-            console.error(e);
-          }
-        };
-
-        ws.onerror = (err) => {
-          logConsole('Watcher notice: WebSocket stream ended or completed.', 'amber');
-        };
-
-        // Finish test after 6 seconds of collecting
-        setTimeout(() => {
-          finishTest();
-        }, 6000);
-
-      } catch (err) {
-        logConsole('Error starting leak check: ' + err.message, 'amber');
-        btn.disabled = false;
-        btn.innerHTML = 'Run DNS Leak Test';
-        statusText.innerText = 'Error occurred';
-      }
-    }
-
-    async function handleDetectedResolver(msg) {
-      const ip = msg.remoteIp;
-      if (detectedResolvers.has(ip)) return;
-
-      detectedResolvers.set(ip, {
-        ip,
-        proto: msg.proto,
-        clientSubnet: msg.clientSubnet || null,
-        loading: true,
-      });
-
-      document.getElementById('emptyResolverMsg').style.display = 'none';
-      document.getElementById('resolverTableContainer').style.display = 'block';
-
-      // Update UI row
-      renderResolversTable();
-
-      // Enrich IP details via our API (powered by addr.tools)
-      try {
-        const enrichResp = await fetch('/api/dns-leak/enrich?ip=' + encodeURIComponent(ip));
-        const enriched = await enrichResp.json();
-        detectedResolvers.set(ip, {
-          ...detectedResolvers.get(ip),
-          ...enriched,
-          loading: false,
-        });
+        const resp = await fetch('/api/dns-leak/enrich?ip=' + encodeURIComponent(ip));
+        const data = await resp.json();
+        ipDataCache.set(ip, data);
+        return data;
       } catch (e) {
-        detectedResolvers.set(ip, {
-          ...detectedResolvers.get(ip),
-          org: 'Unknown',
-          loading: false,
-        });
+        return { ip, org: 'Unknown', ptr: null, ns: null, country: '' };
+      }
+    }
+
+    // Render IP List grouped by Org
+    function renderIPGroup(containerId, itemsMap) {
+      const container = document.getElementById(containerId);
+      if (itemsMap.size === 0) {
+        container.innerHTML = '<div style="color:var(--text-secondary); font-size:13px;">detecting...</div>';
+        return;
       }
 
-      renderResolversTable();
-    }
-
-    function renderResolversTable() {
-      const tbody = document.getElementById('resolverTableBody');
-      const countBadge = document.getElementById('resolverCountBadge');
-      tbody.innerHTML = '';
-
-      countBadge.style.display = 'inline-flex';
-      countBadge.innerText = detectedResolvers.size + ' Resolvers Detected';
-
-      detectedResolvers.forEach((r) => {
-        const tr = document.createElement('tr');
-        const isSameAsClient = r.org && clientOrg && (
-          r.org.toLowerCase().includes(clientOrg.toLowerCase()) ||
-          clientOrg.toLowerCase().includes(r.org.toLowerCase())
-        );
-
-        let verdictBadge = '<span class="badge-status badge-safe">SECURE</span>';
-        if (isSameAsClient) {
-          verdictBadge = '<span class="badge-status badge-leak">ISP LEAK</span>';
-        }
-
-        let ecsBadge = '<span class="badge-status badge-safe">STRIPPED (SAFE)</span>';
-        if (r.clientSubnet && !r.clientSubnet.endsWith('/0')) {
-          ecsBadge = '<span class="badge-status badge-warn">SUBNET LEAKED</span>';
-        }
-
-        tr.innerHTML = 
-          '<td><strong>' + r.ip + '</strong></td>' +
-          '<td style="color:var(--text-secondary);">' + (r.ptr || '<i>None</i>') + '</td>' +
-          '<td>' + (r.loading ? '<i>Loading...</i>' : (r.org || 'Unknown')) + '</td>' +
-          '<td>' + (r.country || '-') + '</td>' +
-          '<td>' + ecsBadge + '</td>' +
-          '<td>' + verdictBadge + '</td>';
-
-        tbody.appendChild(tr);
+      // Group by Org
+      const groups = {};
+      itemsMap.forEach((val, key) => {
+        const org = val.org || 'Unknown Provider';
+        if (!groups[org]) groups[org] = [];
+        groups[org].push(val);
       });
+
+      let html = '';
+      for (const [org, ips] of Object.entries(groups)) {
+        html += '<div class="org-group">';
+        html += '<div class="org-title">' + org + '</div>';
+        for (const item of ips) {
+          const isLeak = item.org && clientOrg && (
+            item.org.toLowerCase().includes(clientOrg.toLowerCase()) ||
+            clientOrg.toLowerCase().includes(item.org.toLowerCase())
+          );
+
+          let ptrOrNs = '';
+          if (item.ptr) {
+            ptrOrNs = '<span class="tag-ptr" title="Reverse DNS PTR">ptr: ' + item.ptr + '</span>';
+          } else if (item.ns) {
+            ptrOrNs = '<span class="tag-ns" title="Authoritative SOA Nameserver">ns: ' + item.ns + '</span>';
+          }
+
+          let geo = item.city ? item.city + ', ' + item.country : item.country || '';
+          let leakBadge = isLeak && containerId === 'resolverList' ? '<span class="tag-leak">ISP LEAK</span>' : '';
+
+          html += '<div class="ip-row">';
+          html += '<span class="ip-address"><a href="https://info.addr.tools/' + item.ip + '" target="_blank">' + item.ip + '</a></span>';
+          if (ptrOrNs) html += ptrOrNs;
+          if (leakBadge) html += leakBadge;
+          if (geo) html += '<span class="tag-geo">' + geo + '</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+      container.innerHTML = html;
     }
 
-    function finishTest() {
-      const btn = document.getElementById('btnRunTest');
-      const statusText = document.getElementById('testStatusText');
+    // Detect client IPv4 & IPv6 & WebRTC
+    async function detectClientIPs() {
+      const handleIP = async (ip) => {
+        if (!ip || clientIPs.has(ip)) return;
+        clientIPs.set(ip, { ip, org: 'Detecting...' });
+        renderIPGroup('clientIpList', clientIPs);
+        const data = await getIPData(ip);
+        clientIPs.set(ip, { ...clientIPs.get(ip), ...data });
+        renderIPGroup('clientIpList', clientIPs);
+      };
+
+      // 1. IPv4 from addr.tools
+      fetch('https://myipv4.addr.tools/plain')
+        .then(r => r.text())
+        .then(t => handleIP(t.trim()))
+        .catch(() => {});
+
+      // 2. IPv6 from addr.tools
+      fetch('https://myipv6.addr.tools/plain')
+        .then(r => r.text())
+        .then(t => handleIP(t.trim()))
+        .catch(() => {});
+
+      // 3. Fallback from Cloudflare request header
+      handleIP('${client.ip}');
+
+      // 4. WebRTC STUN candidate discovery
+      try {
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:myip.addr.tools:3478' },
+            { urls: 'stun:stun.l.google.com:19302' },
+          ],
+        });
+        pc.onicecandidate = (evt) => {
+          if (!evt?.candidate?.candidate) return;
+          const parts = evt.candidate.candidate.split(' ');
+          const candIp = parts[4];
+          if (candIp && !candIp.endsWith('.local') && !candIp.includes(':')) {
+            handleIP(candIp);
+          }
+        };
+        pc.createDataChannel('leak');
+        pc.createOffer().then(o => pc.setLocalDescription(o));
+      } catch (e) {}
+    }
+
+    // Query helper for DNS resolution
+    async function makeQuery(fqdn, timeout = 8000) {
+      if (abortController.signal.aborted) return { connected: false };
+      const controller = new AbortController();
+      const tid = setTimeout(() => controller.abort(), timeout);
+      const start = Date.now();
+      try {
+        const resp = await fetch('https://' + fqdn + '/', { signal: controller.signal, mode: 'no-cors' });
+        const rtt = Date.now() - start;
+        clearTimeout(tid);
+        return { connected: true, rtt };
+      } catch (e) {
+        clearTimeout(tid);
+        return { connected: false };
+      }
+    }
+
+    // Run DNSSEC validation test matrix
+    async function testDNSSEC() {
+      const algs = ['alg13', 'alg14', 'alg15', 'alg18'];
+      let rttSum = 0;
+      let rttCount = 0;
+
+      for (let algIdx = 0; algIdx < algs.length; algIdx++) {
+        const alg = algs[algIdx];
+        const validFqdn = clientId + '.test-' + alg + '.dnscheck.tools';
+        const { connected, rtt } = await makeQuery(validFqdn);
+        dnssecTests[algIdx] = connected;
+        if (rtt) { rttSum += rtt; rttCount++; }
+
+        if (!connected) {
+          // Valid signature failed to resolve -> mark column ERR
+          for (let row = 0; row < 3; row++) {
+            const cell = document.getElementById('cell-' + (row * 4 + algIdx));
+            if (cell) {
+              cell.className = 'err';
+              cell.innerText = 'ERR';
+            }
+          }
+          continue;
+        }
+
+        // Test invalid signatures (badsig, expiredsig, nosig)
+        const sigOpts = ['badsig', 'expiredsig', 'nosig'];
+        for (let sigIdx = 0; sigIdx < sigOpts.length; sigIdx++) {
+          const sigOpt = sigOpts[sigIdx];
+          const testFqdn = clientId + '-' + sigOpt + '.test-' + alg + '.dnscheck.tools';
+          const res = await makeQuery(testFqdn, 12000);
+          const cell = document.getElementById('cell-' + (sigIdx * 4 + algIdx));
+          dnssecTests[4 + sigIdx * 4 + algIdx] = res.connected;
+
+          if (cell) {
+            // A secure validating resolver MUST FAIL the connection to pass DNSSEC
+            if (!res.connected) {
+              cell.className = 'pass';
+              cell.innerText = 'PASS';
+            } else if (alg === 'alg18') {
+              cell.className = 'fail-star';
+              cell.innerText = 'FAIL*';
+              document.getElementById('mldsaNote').style.display = 'block';
+            } else {
+              cell.className = 'fail';
+              cell.innerText = 'FAIL';
+            }
+          }
+        }
+      }
+
+      // Update RTT status
+      if (rttCount > 0) {
+        const avgRtt = Math.round(rttSum / rttCount);
+        document.getElementById('rtt-status').innerText = 'rtt: ~' + avgRtt + 'ms';
+      }
+
+      // Evaluate DNSSEC Summary
+      const dnssecBadge = document.getElementById('dnssecSummaryBadge');
+      const dnssecBar = document.getElementById('dnssec-status');
+      const hasFails = [0,1,2, 4,5,6, 8,9,10].some(i => dnssecTests[4 + i] === true);
+
+      if (hasFails) {
+        dnssecBadge.className = 'status-tag red';
+        dnssecBadge.innerText = 'NOT AUTHENTICATED';
+        dnssecBar.className = 'status-tag red';
+      } else {
+        dnssecBadge.className = 'status-tag green';
+        dnssecBadge.innerText = 'AUTHENTICATED';
+        dnssecBar.className = 'status-tag green';
+      }
+    }
+
+    // Connect WebSocket & stream DNS queries
+    function startWatcher() {
+      ws = new WebSocket('wss://ws.dnscheck.tools/watch/' + clientId, 'full');
+
+      ws.onopen = async () => {
+        // Send 4 probe queries
+        for (let i = 0; i < 4; i++) {
+          const fqdn = String.fromCharCode(97 + i) + '.' + clientId + '-nullip.test.dnscheck.tools';
+          makeQuery(fqdn, 6000).catch(() => {});
+        }
+
+        // Test IPv6 resolver reachability
+        makeQuery(clientId + '-nullip.test-ipv6.dnscheck.tools', 6000).then(({ connected }) => {
+          const ipv6Tag = document.getElementById('ipv6-status');
+          if (connected || seenIPv6) {
+            ipv6Tag.className = 'status-tag green';
+          } else {
+            ipv6Tag.className = 'status-tag red';
+          }
+        });
+
+        // Run full DNSSEC validation suite
+        testDNSSEC();
+      };
+
+      ws.onmessage = async ({ data }) => {
+        try {
+          const req = JSON.parse(data);
+          totalDnsQueries++;
+          document.getElementById('queryCount').innerText = totalDnsQueries;
+
+          if (req.remoteIp?.includes(':')) {
+            seenIPv6 = true;
+            document.getElementById('ipv6-status').className = 'status-tag green';
+          }
+
+          // EDNS UDP size
+          if (req.isEdns0 && !udpSizes.includes(req.udpSize)) {
+            udpSizes.push(req.udpSize);
+            const ednsTag = document.getElementById('edns-status');
+            ednsTag.className = 'status-tag green';
+            ednsTag.innerText = 'EDNS (' + udpSizes.join('/') + ')';
+          }
+
+          // ECS Check
+          if (req.clientSubnet && !req.clientSubnet.endsWith('/0') && !clientSubnets.has(req.clientSubnet)) {
+            clientSubnets.set(req.clientSubnet, { ip: req.clientSubnet, org: 'Advertised Client Subnet' });
+            document.getElementById('ecsCard').style.display = 'block';
+            renderIPGroup('ecsList', clientSubnets);
+            getIPData(req.clientSubnet).then(d => {
+              clientSubnets.set(req.clientSubnet, { ...clientSubnets.get(req.clientSubnet), ...d });
+              renderIPGroup('ecsList', clientSubnets);
+            });
+          }
+
+          // Resolver tracking
+          if (!detectedResolvers.has(req.remoteIp)) {
+            detectedResolvers.set(req.remoteIp, {
+              ip: req.remoteIp,
+              org: 'Resolving Provider...',
+              proto: req.proto,
+              clientSubnet: req.clientSubnet || null,
+            });
+            document.getElementById('resolverCountTag').innerText = detectedResolvers.size + ' Resolvers Detected';
+            renderIPGroup('resolverList', detectedResolvers);
+
+            const ipInfo = await getIPData(req.remoteIp);
+            detectedResolvers.set(req.remoteIp, {
+              ...detectedResolvers.get(req.remoteIp),
+              ...ipInfo,
+            });
+            renderIPGroup('resolverList', detectedResolvers);
+            updateVerdict();
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      setTimeout(() => updateVerdict(), 7000);
+    }
+
+    function updateVerdict() {
       const verdictBox = document.getElementById('verdictBox');
+      const verdictIcon = document.getElementById('verdictIcon');
       const verdictTitle = document.getElementById('verdictTitle');
       const verdictDesc = document.getElementById('verdictDesc');
-      const verdictIcon = document.getElementById('verdictIcon');
-
-      btn.disabled = false;
-      btn.innerHTML = 'Run DNS Leak Test Again';
-      statusText.innerHTML = '<span style="color:#166534; font-weight:600;">✓ Completed</span>';
-
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
 
       let hasIspLeak = false;
-      let hasEcsLeak = false;
+      let hasEcsLeak = clientSubnets.size > 0;
 
-      detectedResolvers.forEach((r) => {
+      detectedResolvers.forEach(r => {
         if (r.org && clientOrg && (
           r.org.toLowerCase().includes(clientOrg.toLowerCase()) ||
           clientOrg.toLowerCase().includes(r.org.toLowerCase())
         )) {
           hasIspLeak = true;
         }
-        if (r.clientSubnet && !r.clientSubnet.endsWith('/0')) {
-          hasEcsLeak = true;
-        }
       });
 
-      verdictBox.style.display = 'flex';
-      verdictBox.className = 'verdict-box';
-
       if (hasIspLeak) {
-        verdictBox.classList.add('leak');
+        verdictBox.className = 'verdict-box leak';
         verdictIcon.innerText = '⚠️';
         verdictTitle.innerText = 'DNS Leak Detected!';
-        verdictDesc.innerText = 'One or more DNS queries reached your local ISP (' + clientOrg + '). Your DNS traffic is not fully contained in your secure Private DNS/VPN tunnel.';
+        verdictDesc.innerText = 'DNS queries reached your local ISP (' + clientOrg + '). Encrypted DNS tunnel is leaking.';
       } else if (hasEcsLeak) {
-        verdictBox.classList.add('ecs');
+        verdictBox.className = 'verdict-box ecs';
         verdictIcon.innerText = '⚠️';
-        verdictTitle.innerText = 'EDNS Client Subnet (ECS) Leaked';
-        verdictDesc.innerText = 'Your queries are using external resolvers, but your IP subnet was advertised to authoritative nameservers.';
+        verdictTitle.innerText = 'EDNS Client Subnet (ECS) Exposure';
+        verdictDesc.innerText = 'Queries are routed through external resolvers, but your real IP subnet is being advertised.';
       } else {
-        verdictBox.classList.add('secure');
+        verdictBox.className = 'verdict-box secure';
         verdictIcon.innerText = '🛡️';
         verdictTitle.innerText = 'No DNS Leak Detected (Protected)';
-        verdictDesc.innerText = 'All detected resolvers belong to secure public/private DNS providers. No queries reached your local ISP, and ECS IP subnet was stripped.';
+        verdictDesc.innerText = 'All detected resolvers belong to secure public/private DNS providers. No queries reached your local ISP.';
       }
-
-      logConsole('Test completed. Verdict: ' + verdictTitle.innerText, hasIspLeak ? 'amber' : 'green');
     }
+
+    function restartTest() {
+      location.reload();
+    }
+
+    function askMicPermission() {
+      const msg = 'Granting microphone permission allows WebRTC to discover additional local and VPN interface IP addresses (RFC 8828).\\n\\nNo audio will ever be recorded or transmitted.';
+      if (confirm(msg)) {
+        navigator.mediaDevices?.getUserMedia({ audio: true })
+          .then(stream => {
+            setTimeout(() => stream.getTracks().forEach(t => t.stop()), 1000);
+            detectClientIPs();
+          })
+          .catch(() => {});
+      }
+    }
+
+    // Auto-start on load
+    detectClientIPs();
+    startWatcher();
   </script>
 </body>
 </html>`;
