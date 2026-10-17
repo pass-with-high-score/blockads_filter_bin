@@ -415,9 +415,10 @@ export function renderDashboardHtml(host: string, upstream: string, ruleCount: n
         <span>Block<span style="color:#00E676">Ads</span></span>
       </a>
       <div class="nav-links">
-        <a href="https://complier.pwhs.app">Compiler & Merger</a>
-        <a href="https://t.me/blockads_android" target="_blank" rel="noopener noreferrer">Telegram</a>
-        <a href="https://www.reddit.com/r/BlockAds/" target="_blank" rel="noopener noreferrer">Reddit</a>
+        <a href="/" style="font-weight: 700; color: var(--text-primary);">DNS Setup</a>
+        <a href="/leak" style="font-weight: 600; color: #00a846;">DNS Leak Test</a>
+        <a href="https://complier.pwhs.app">Compiler</a>
+        <a href="/api/dns-leak/docs">Open API</a>
       </div>
     </div>
   </nav>
@@ -572,6 +573,8 @@ export function renderDashboardHtml(host: string, upstream: string, ruleCount: n
       <div>
         <h4 style="font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 8px;">Links</h4>
         <div class="footer-links">
+          <a href="/leak">DNS Leak Test</a>
+          <a href="/api/dns-leak/docs">Leak Check API</a>
           <a href="https://complier.pwhs.app">Filter Compiler</a>
           <a href="https://t.me/blockads_android" target="_blank" rel="noopener noreferrer">Telegram Community</a>
           <a href="https://www.reddit.com/r/BlockAds/" target="_blank" rel="noopener noreferrer">Reddit Forum</a>

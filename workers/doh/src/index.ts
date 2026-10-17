@@ -21,6 +21,17 @@ import {
 } from "./dns";
 import { getBlocklist, isDomainBlocked } from "./blocklist";
 import { renderDashboardHtml } from "./html";
+import {
+  generateSessionId,
+  getProbeDomains,
+  getClientNetworkInfo,
+  enrichIp,
+  evaluateLeak,
+  POWERED_BY,
+  ResolverInfo,
+} from "./leak";
+import { renderLeakHtml } from "./leak-html";
+import { getOpenApiSpec, renderSwaggerDocsHtml } from "./openapi";
 
 export interface Env {
   UPSTREAM_DOH?: string;
@@ -56,10 +67,17 @@ export default {
       return Response.json({
         status: "ok",
         service: "blockads-doh",
-        version: "1.1.0",
+        version: "1.2.0",
         upstream: env.UPSTREAM_DOH || UPSTREAM_POOL[0],
         blockMode: env.BLOCK_MODE || "zero",
-        features: ["edge_caching", "ecs_stripping", "upstream_fallback", "subdomain_matching"],
+        features: [
+          "edge_caching",
+          "ecs_stripping",
+          "upstream_fallback",
+          "subdomain_matching",
+          "dns_leak_check",
+          "addr_tools_integration",
+        ],
         time: new Date().toISOString(),
       });
     }
@@ -80,7 +98,131 @@ export default {
       });
     }
 
-    // ── 3. DoH Query Handling (/dns-query or /<profile>/dns-query) ──
+    // ── 3. DNS Leak Test Web UI (/leak or /dns-leak) ──
+    if (pathname === "/leak" || pathname === "/dns-leak") {
+      const client = getClientNetworkInfo(req);
+      const html = renderLeakHtml(url.host, client);
+      return new Response(html, {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // ── 4. Open API: Init DNS Leak Test Session ──
+    if (pathname === "/api/dns-leak/init" || pathname === "/api/dns-leak/session") {
+      const sessionId = generateSessionId();
+      const probeDomains = getProbeDomains(sessionId);
+      const client = getClientNetworkInfo(req);
+      return Response.json(
+        {
+          status: "ok",
+          sessionId,
+          wsUrl: `wss://ws.dnscheck.tools/watch/${sessionId}`,
+          watchWebUrl: `https://dnscheck.tools/watch/${sessionId}`,
+          probeDomains,
+          client,
+          poweredBy: POWERED_BY,
+        },
+        { headers: CORS_HEADERS }
+      );
+    }
+
+    // ── 5. Open API: Client Network Identity ──
+    if (pathname === "/api/dns-leak/myip" || pathname === "/api/dns-leak/client") {
+      const client = getClientNetworkInfo(req);
+      return Response.json(
+        {
+          status: "ok",
+          client,
+          poweredBy: POWERED_BY,
+        },
+        { headers: CORS_HEADERS }
+      );
+    }
+
+    // ── 6. Open API: Enrich Resolver IP (Geo, Org, PTR) ──
+    if (pathname === "/api/dns-leak/enrich") {
+      const ip = url.searchParams.get("ip");
+      if (!ip) {
+        return Response.json(
+          { status: "error", message: "Missing required 'ip' query parameter" },
+          { status: 400, headers: CORS_HEADERS }
+        );
+      }
+      const enriched = await enrichIp(ip);
+      return Response.json(
+        {
+          status: "ok",
+          ...enriched,
+          poweredBy: POWERED_BY,
+        },
+        { headers: CORS_HEADERS }
+      );
+    }
+
+    // ── 7. Open API: Analyze Resolver List for Leaks ──
+    if (pathname === "/api/dns-leak/analyze") {
+      if (req.method !== "POST") {
+        return Response.json(
+          { status: "error", message: "Method not allowed. Use POST." },
+          { status: 405, headers: CORS_HEADERS }
+        );
+      }
+
+      try {
+        const body: any = await req.json();
+        const client = getClientNetworkInfo(req);
+        if (body.clientAsn && typeof body.clientAsn === "number") {
+          client.asn = body.clientAsn;
+        }
+
+        const inputResolvers: Array<{ ip: string; clientSubnet?: string | null }> =
+          Array.isArray(body.resolvers) ? body.resolvers : [];
+
+        const enrichedResolvers: ResolverInfo[] = await Promise.all(
+          inputResolvers.map(async (r) => {
+            const data = await enrichIp(r.ip);
+            return {
+              ...data,
+              clientSubnet: r.clientSubnet || null,
+            };
+          })
+        );
+
+        const evaluation = evaluateLeak(client, enrichedResolvers);
+
+        return Response.json(
+          {
+            status: "ok",
+            ...evaluation,
+            client,
+            resolvers: enrichedResolvers,
+            detectedResolverCount: enrichedResolvers.length,
+            testedAt: new Date().toISOString(),
+            poweredBy: POWERED_BY,
+          },
+          { headers: CORS_HEADERS }
+        );
+      } catch (err: any) {
+        return Response.json(
+          { status: "error", message: `Invalid JSON payload: ${err.message}` },
+          { status: 400, headers: CORS_HEADERS }
+        );
+      }
+    }
+
+    // ── 8. Open API: OpenAPI 3.0 Specification ──
+    if (pathname === "/api/dns-leak/openapi.json") {
+      return Response.json(getOpenApiSpec(url.host), { headers: CORS_HEADERS });
+    }
+
+    // ── 9. Open API: Interactive Documentation / Swagger ──
+    if (pathname === "/api/dns-leak/docs" || pathname === "/api/dns-leak") {
+      return new Response(renderSwaggerDocsHtml(url.host), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+
+    // ── 10. DoH Query Handling (/dns-query or /<profile>/dns-query) ──
     if (pathname === "/dns-query" || pathname.endsWith("/dns-query")) {
       return handleDnsQuery(req, env, ctx, url);
     }
