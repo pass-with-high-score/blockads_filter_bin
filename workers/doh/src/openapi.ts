@@ -53,10 +53,29 @@ export function getOpenApiSpec(host: string) {
                         type: "array",
                         items: { type: "string" },
                         example: [
-                          "1.3f82a1b9.test.dnscheck.tools",
-                          "2.3f82a1b9.test.dnscheck.tools",
-                          "3.3f82a1b9.test.dnscheck.tools",
-                          "4.3f82a1b9.test.dnscheck.tools",
+                          "a.3f82a1b9-nullip.test.dnscheck.tools",
+                          "b.3f82a1b9-nullip.test.dnscheck.tools",
+                          "c.3f82a1b9-nullip.test.dnscheck.tools",
+                          "d.3f82a1b9-nullip.test.dnscheck.tools",
+                        ],
+                      },
+                      dnssecSuite: {
+                        type: "object",
+                        description: "Full suite of DNSSEC cryptographic validation test domains (ECDSA P-256, P-384, Ed25519, MLDSA44 across badsig, expiredsig, nosig)",
+                      },
+                      dualStackEndpoints: {
+                        type: "object",
+                        properties: {
+                          ipv4: { type: "string", example: "https://myipv4.addr.tools/plain" },
+                          ipv6: { type: "string", example: "https://myipv6.addr.tools/plain" },
+                        },
+                      },
+                      stunServers: {
+                        type: "array",
+                        items: { type: "string" },
+                        example: [
+                          "stun:myip.addr.tools:3478",
+                          "stun:stun.l.google.com:19302",
                         ],
                       },
                       client: {
@@ -142,7 +161,8 @@ export function getOpenApiSpec(host: string) {
                       org: { type: "string", example: "Cloudflare, Inc." },
                       country: { type: "string", example: "US" },
                       city: { type: "string", example: "San Francisco" },
-                      ptr: { type: "string", example: "one.one.one.one" },
+                      ptr: { type: "string", nullable: true, example: "one.one.one.one" },
+                      ns: { type: "string", nullable: true, example: "cruz.ns.cloudflare.com" },
                       poweredBy: { type: "object" },
                     },
                   },
