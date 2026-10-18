@@ -11,7 +11,7 @@
   },
   "routes": [
     {
-      "pattern": "dns.pwhs.app",
+      "pattern": "edge-dns.pwhs.app",
       "custom_domain": true
     }
   ],
