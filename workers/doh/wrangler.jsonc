@@ -19,7 +19,7 @@
     "UPSTREAM_DOH": "https://1.1.1.1/dns-query",
     "BLOCK_MODE": "zero",
     "CACHE_TTL": "300",
-    "DEFAULT_BLOCKLIST_URL": "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts"
+    "DEFAULT_BLOCKLIST_URL": "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts,https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts,https://justdomains.github.io/blocklists/lists/easyprivacy-justdomains.txt"
   },
   "r2_buckets": [
     {

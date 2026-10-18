@@ -83,14 +83,49 @@ export function isDomainBlocked(domain: string, blocklist: Set<string>): boolean
   return false;
 }
 
+export const PRESET_BLOCKLISTS: Record<string, string> = {
+  hostsvn: "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts",
+  stevenblack: "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+  easyprivacy: "https://justdomains.github.io/blocklists/lists/easyprivacy-justdomains.txt",
+};
+
+export const DEFAULT_COMBINED_BLOCKLISTS = [
+  PRESET_BLOCKLISTS.hostsvn,
+  PRESET_BLOCKLISTS.stevenblack,
+  PRESET_BLOCKLISTS.easyprivacy,
+];
+
 /**
- * Loads and caches blocklist from URL or R2
+ * Loads and caches blocklists from one or multiple URLs/presets
  */
 export async function getBlocklist(
-  sourceUrl: string,
+  source: string | string[],
   r2Bucket?: R2Bucket
 ): Promise<Set<string>> {
-  const cacheKey = sourceUrl || "default";
+  // Normalize input into an array of URLs
+  let urls: string[] = [];
+  if (Array.isArray(source)) {
+    urls = source;
+  } else if (typeof source === "string") {
+    if (source.includes(",")) {
+      urls = source.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (source === "all" || source === "combined") {
+      urls = DEFAULT_COMBINED_BLOCKLISTS;
+    } else if (PRESET_BLOCKLISTS[source.toLowerCase()]) {
+      urls = [PRESET_BLOCKLISTS[source.toLowerCase()]];
+    } else if (source.trim()) {
+      urls = [source.trim()];
+    }
+  }
+
+  if (urls.length === 0) {
+    urls = DEFAULT_COMBINED_BLOCKLISTS;
+  }
+
+  // Resolve preset names inside array
+  urls = urls.map((u) => PRESET_BLOCKLISTS[u.toLowerCase()] || u);
+
+  const cacheKey = urls.sort().join("|");
   const cached = blocklistCacheMap.get(cacheKey);
 
   if (cached && Date.now() - cached.lastLoaded < CACHE_TTL_MS) {
@@ -99,15 +134,17 @@ export async function getBlocklist(
 
   const domains = new Set<string>(BUILTIN_BLOCKED_DOMAINS);
 
-  // If sourceUrl is provided, download and parse
-  if (sourceUrl) {
-    try {
-      const resp = await fetch(sourceUrl, {
-        headers: { "User-Agent": "BlockAds-DoH-Worker/1.0" },
-        cf: { cacheTtl: 21600, cacheEverything: true },
-      });
+  // Fetch all blocklists concurrently
+  await Promise.allSettled(
+    urls.map(async (url) => {
+      try {
+        const resp = await fetch(url, {
+          headers: { "User-Agent": "BlockAds-DoH-Worker/1.0" },
+          cf: { cacheTtl: 21600, cacheEverything: true },
+        });
 
-      if (resp.ok) {
+        if (!resp.ok) return;
+
         const text = await resp.text();
         const lines = text.split("\n");
 
@@ -144,11 +181,11 @@ export async function getBlocklist(
             domains.add(line.toLowerCase());
           }
         }
+      } catch (err) {
+        console.error(`[DoH Blocklist] Failed to fetch blocklist from ${url}:`, err);
       }
-    } catch (err) {
-      console.error("[DoH Blocklist] Failed to fetch upstream blocklist:", err);
-    }
-  }
+    })
+  );
 
   blocklistCacheMap.set(cacheKey, {
     domains,

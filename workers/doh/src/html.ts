@@ -457,7 +457,7 @@ export function renderDashboardHtml(host: string, upstream: string, ruleCount: n
         <div class="stat-card">
           <div class="stat-label">Active Rules</div>
           <div class="stat-value" style="color: #00a846;">${ruleCount.toLocaleString()}</div>
-          <div class="stat-sub">Real-time sinkhole entries</div>
+          <div class="stat-sub">hostsVN &bull; StevenBlack &bull; EasyPrivacy</div>
         </div>
 
         <div class="stat-card">

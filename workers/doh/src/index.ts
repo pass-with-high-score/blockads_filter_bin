@@ -90,8 +90,7 @@ export default {
     // ── 2. Landing / Setup Dashboard ──
     if (pathname === "/" || pathname === "/setup") {
       const blocklistUrl =
-        env.DEFAULT_BLOCKLIST_URL ||
-        "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts";
+        env.DEFAULT_BLOCKLIST_URL || "all";
       const blocklist = await getBlocklist(blocklistUrl, env.R2_BUCKET);
       const html = renderDashboardHtml(
         url.host,
@@ -348,11 +347,16 @@ async function handleDnsQuery(
   const primaryUpstream = env.UPSTREAM_DOH || UPSTREAM_POOL[0];
   const blockMode = (env.BLOCK_MODE as "zero" | "nxdomain") || "zero";
   const defaultBlocklistUrl =
-    env.DEFAULT_BLOCKLIST_URL ||
-    "https://raw.githubusercontent.com/bigdargon/hostsVN/master/hosts";
+    env.DEFAULT_BLOCKLIST_URL || "all";
 
-  // Check for custom blocklist URL parameter (e.g. ?blocklist=https://...)
-  const blocklistSource = url.searchParams.get("blocklist") || defaultBlocklistUrl;
+  // Check for profile in URL path: /<profile>/dns-query (e.g. /hostsvn/dns-query, /stevenblack/dns-query)
+  let pathProfile = "";
+  if (url.pathname.endsWith("/dns-query") && url.pathname !== "/dns-query") {
+    pathProfile = url.pathname.slice(1, url.pathname.indexOf("/dns-query")).toLowerCase();
+  }
+
+  // Check for custom blocklist URL parameter (e.g. ?blocklist=https://...) or profile
+  const blocklistSource = url.searchParams.get("blocklist") || pathProfile || defaultBlocklistUrl;
   const blocklist = await getBlocklist(blocklistSource, env.R2_BUCKET);
 
   // ── Mode A: JSON DoH API (e.g. /dns-query?name=example.com&type=A) ──
