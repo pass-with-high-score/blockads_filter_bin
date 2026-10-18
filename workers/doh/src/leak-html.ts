@@ -444,6 +444,7 @@ export function renderLeakHtml(host: string, client: ClientNetworkInfo): string 
       <nav class="nav-links">
         <a href="/">Setup DNS</a>
         <a href="/leak" class="active">DNS Leak & Security</a>
+        <a href="/sub">Sub Converter</a>
         <a href="https://complier.pwhs.app" target="_blank">Compiler</a>
         <a href="/api/dns-leak/docs">Open API</a>
         <a href="https://github.com/brianshea2/addr.tools" target="_blank" rel="noopener noreferrer">addr.tools ↗</a>

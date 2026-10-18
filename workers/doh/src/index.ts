@@ -33,6 +33,10 @@ import {
 } from "./leak";
 import { renderLeakHtml } from "./leak-html";
 import { getOpenApiSpec, renderSwaggerDocsHtml } from "./openapi";
+import { parseSubscriptionContent } from "./converter/parser";
+import { generateClientConfig } from "./converter/generator";
+import { renderConverterHtml } from "./converter/html";
+import { TargetClient } from "./converter/types";
 
 export interface Env {
   UPSTREAM_DOH?: string;
@@ -233,7 +237,96 @@ export default {
       });
     }
 
-    // ── 10. DoH Query Handling (/dns-query or /<profile>/dns-query) ──
+    // ── 10. Universal Proxy & VPN Subscription Converter (/sub or /converter) ──
+    if (pathname === "/sub" || pathname === "/converter") {
+      const subUrl = url.searchParams.get("url");
+      const target = (url.searchParams.get("target") || "quanx").toLowerCase() as TargetClient;
+      const filterRegex = url.searchParams.get("filter") || undefined;
+      const excludeRegex = url.searchParams.get("exclude") || undefined;
+      const emojiFlags = url.searchParams.get("emoji") !== "false";
+      const includeRules = url.searchParams.get("rules") === "true";
+
+      const accept = req.headers.get("Accept") || "";
+      const isHtmlRequest = accept.includes("text/html") && !subUrl && req.method === "GET";
+
+      if (pathname === "/converter" || isHtmlRequest) {
+        return new Response(renderConverterHtml(url.host), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      let rawContent = "";
+      let upstreamUserInfo: string | null = null;
+
+      if (req.method === "POST") {
+        rawContent = await req.text();
+      } else if (subUrl) {
+        try {
+          const upstreamRes = await fetch(subUrl, {
+            headers: {
+              "User-Agent": req.headers.get("User-Agent") || "v2rayNG/1.8.5 (BlockAds Sub Converter)",
+              "Accept": "*/*",
+            },
+            redirect: "follow",
+          });
+
+          if (!upstreamRes.ok) {
+            return new Response(`Failed to fetch upstream subscription (${upstreamRes.status} ${upstreamRes.statusText})`, {
+              status: 502,
+              headers: { ...CORS_HEADERS, "Content-Type": "text/plain; charset=utf-8" },
+            });
+          }
+
+          rawContent = await upstreamRes.text();
+          upstreamUserInfo = upstreamRes.headers.get("subscription-userinfo");
+        } catch (err: any) {
+          return new Response(`Upstream connection error: ${err.message}`, {
+            status: 502,
+            headers: { ...CORS_HEADERS, "Content-Type": "text/plain; charset=utf-8" },
+          });
+        }
+      } else {
+        return new Response(renderConverterHtml(url.host), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+
+      const nodes = parseSubscriptionContent(rawContent);
+      const config = generateClientConfig(nodes, {
+        target,
+        filterRegex,
+        excludeRegex,
+        emojiFlags,
+        includeRules,
+      });
+
+      const responseHeaders: Record<string, string> = {
+        ...CORS_HEADERS,
+        "Cache-Control": "public, max-age=60",
+        "Profile-Update-Interval": "24",
+      };
+
+      if (upstreamUserInfo) {
+        responseHeaders["Subscription-Userinfo"] = upstreamUserInfo;
+      }
+
+      if (target === "quanx") {
+        responseHeaders["Content-Type"] = "text/plain; charset=utf-8";
+        responseHeaders["Content-Disposition"] = 'inline; filename="subscription.conf"';
+      } else if (target === "clash") {
+        responseHeaders["Content-Type"] = "text/yaml; charset=utf-8";
+        responseHeaders["Content-Disposition"] = 'inline; filename="config.yaml"';
+      } else if (target === "singbox") {
+        responseHeaders["Content-Type"] = "application/json; charset=utf-8";
+        responseHeaders["Content-Disposition"] = 'inline; filename="config.json"';
+      } else {
+        responseHeaders["Content-Type"] = "text/plain; charset=utf-8";
+      }
+
+      return new Response(config, { headers: responseHeaders });
+    }
+
+    // ── 11. DoH Query Handling (/dns-query or /<profile>/dns-query) ──
     if (pathname === "/dns-query" || pathname.endsWith("/dns-query")) {
       return handleDnsQuery(req, env, ctx, url);
     }

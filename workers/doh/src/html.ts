@@ -417,6 +417,7 @@ export function renderDashboardHtml(host: string, upstream: string, ruleCount: n
       <div class="nav-links">
         <a href="/" style="font-weight: 700; color: var(--text-primary);">DNS Setup</a>
         <a href="/leak" style="font-weight: 600; color: #00a846;">DNS Leak Test</a>
+        <a href="/sub">Sub Converter</a>
         <a href="https://complier.pwhs.app">Compiler</a>
         <a href="/api/dns-leak/docs">Open API</a>
       </div>
