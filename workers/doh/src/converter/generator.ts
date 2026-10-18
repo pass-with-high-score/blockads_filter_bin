@@ -74,6 +74,15 @@ function filterAndDecorateNodes(
     });
   }
 
+  // Deduplicate identical nodes
+  const seen = new Set<string>();
+  result = result.filter((n) => {
+    const key = `${n.type}:${n.server.toLowerCase()}:${n.port}:${n.tag.trim().toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   return result;
 }
 
