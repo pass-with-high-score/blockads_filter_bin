@@ -441,7 +441,7 @@ export function renderDashboardHtml(host: string, upstream: string, ruleCount: n
       <div class="card-header">
         <h2 class="card-title">Your DoH Endpoint</h2>
         <p class="card-desc">
-          Universal DNS-over-HTTPS URL. Paste into Android Private DNS, browser settings, or router configurations.
+          Universal DNS-over-HTTPS URL. Use in browsers, DoH apps, or router configurations.
         </p>
       </div>
 
@@ -489,11 +489,11 @@ export function renderDashboardHtml(host: string, upstream: string, ruleCount: n
           <div class="step-info">
             <div class="step-title">
               <span>Android (Private DNS)</span>
-              <span class="code-pill" onclick="copyText('${host}')">${host}</span>
+              <span class="code-pill" onclick="copyText('dns.pwhs.app')">dns.pwhs.app</span>
             </div>
             <div class="step-body">
               Open <strong>Settings</strong> &rarr; <strong>Network & internet</strong> &rarr; <strong>Private DNS</strong>.<br>
-              Select <strong>Private DNS provider hostname</strong> and enter <code class="code-pill" onclick="copyText('${host}')">${host}</code>.
+              Select <strong>Private DNS provider hostname</strong> and enter <code class="code-pill" onclick="copyText('dns.pwhs.app')">dns.pwhs.app</code>.
             </div>
           </div>
         </div>
