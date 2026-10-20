@@ -1,0 +1,29 @@
+{
+  "id": "facebook",
+  "name": "Facebook & Messenger Ad & Tracking Cleaner",
+  "enabled": true,
+  "domains": [
+    "facebook.com",
+    "m.facebook.com",
+    "web.facebook.com",
+    "messenger.com"
+  ],
+  "mock_paths": [
+    {
+      "pattern": "/ajax/bz",
+      "status": 204
+    }
+  ],
+  "block_paths": [
+    "/tr/",
+    "/signals_log",
+    "/privacy/mutation"
+  ],
+  "cosmetic_css": [
+    "div[data-pagelet*='FeedUnit_'] span:has-text('Sponsored') { display: none !important; }",
+    "div[data-pagelet*='FeedUnit_'] span:has-text('Được tài trợ') { display: none !important; }",
+    "div[data-pagelet*='FeedUnit_'] span:has-text('広告') { display: none !important; }"
+  ],
+  "scriptlets": [],
+  "scripts": []
+}

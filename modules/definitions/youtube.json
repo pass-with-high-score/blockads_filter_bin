@@ -1,0 +1,54 @@
+{
+  "id": "youtube",
+  "name": "YouTube AdBlock & Video Enhancements",
+  "enabled": true,
+  "domains": [
+    "youtube.com",
+    "m.youtube.com",
+    "www.youtube.com",
+    "youtubei.googleapis.com"
+  ],
+  "mock_paths": [
+    {
+      "pattern": "/youtubei/v1/player/ad_break",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{}"
+    },
+    {
+      "pattern": "/get_midroll_info",
+      "status": 200,
+      "contentType": "application/json; charset=utf-8",
+      "body": "{}"
+    },
+    {
+      "pattern": "/api/stats/ads",
+      "status": 204
+    }
+  ],
+  "block_paths": [
+    "/pagead",
+    "/pagead.js",
+    "/static/doubleclick/instream",
+    "/ad_status"
+  ],
+  "cosmetic_css": [
+    "ytd-promoted-sparkles-web-renderer { display: none !important; }",
+    "ytd-display-ad-renderer { display: none !important; }",
+    "ytd-action-companion-ad-renderer { display: none !important; }",
+    ".ad-showing { display: none !important; }",
+    ".ytp-ad-overlay-container { display: none !important; }",
+    ".ytp-ad-message-container { display: none !important; }",
+    "ytd-ad-slot-renderer { display: none !important; }",
+    "#masthead-ad { display: none !important; }"
+  ],
+  "scriptlets": [
+    "set-constant ytInitialPlayerResponse.adPlacements undefined",
+    "set-constant playerResponse.adPlacements undefined",
+    "prevent-fetch /ad_break"
+  ],
+  "scripts": [
+    "youtube_sanitizer.js",
+    "background_play.js"
+  ]
+}
